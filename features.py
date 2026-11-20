@@ -7,6 +7,7 @@ Y_t is the realised return of the NEXT trading day.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -158,14 +159,67 @@ def build_dataset(target_mode=TARGET_MODE, refresh=False, save=True):
         ARTIFACT_DIR.mkdir(exist_ok=True)
         out = df.copy()
         out["date"] = out["date"].dt.strftime("%Y-%m-%d")
-        out.to_csv(ARTIFACT_DIR / "dataset.csv", index=False)
-        print(f"Saved dataset to {ARTIFACT_DIR / 'dataset.csv'}")
+        out.to_csv(DATASET_CSV, index=False)
+        DATASET_INFO.write_text(json.dumps(_dataset_info(target_mode), indent=2))
+        print(f"Saved dataset to {DATASET_CSV}")
 
+    return _to_arrays(df)
+
+
+# ---------- reuse the saved dataset (no API calls) ----------
+DATASET_CSV = ARTIFACT_DIR / "dataset.csv"
+DATASET_INFO = ARTIFACT_DIR / "dataset_info.json"
+
+
+def _dataset_info(target_mode):
+    return {"target_mode": target_mode, "data_start": DATA_START, "data_end": DATA_END,
+            "tickers": TICKERS, "feature_names": FEATURE_NAMES}
+
+
+def _to_arrays(df):
     X = df[FEATURE_NAMES].to_numpy(dtype="float32")
     Y = df["Y"].to_numpy(dtype="float32").reshape(-1, 1)
     dates = df["date"].values.astype("datetime64[ns]")
     tickers = df["ticker"].to_numpy(dtype=object)
     return X, Y, dates, tickers
+
+
+def load_saved_dataset(target_mode=TARGET_MODE):
+    """Read artifacts/dataset.csv. Returns None if it is missing or was built with other settings."""
+    if not DATASET_CSV.exists():
+        print(f"No saved dataset at {DATASET_CSV}")
+        return None
+
+    if DATASET_INFO.exists():
+        info = json.loads(DATASET_INFO.read_text())
+        wanted = _dataset_info(target_mode)
+        diff = [k for k in wanted if info.get(k) != wanted[k]]
+        if diff:
+            print(f"Saved dataset was built with different settings ({', '.join(diff)})")
+            return None
+    else:
+        print(f"Note: {DATASET_INFO.name} not found; assuming dataset.csv matches the current "
+              f"settings (TARGET_MODE = {target_mode!r}).")
+
+    df = pd.read_csv(DATASET_CSV, parse_dates=["date"])
+    missing = [c for c in ["date", "ticker", "Y"] + FEATURE_NAMES if c not in df.columns]
+    if missing:
+        print(f"Saved dataset is missing columns {missing}")
+        return None
+
+    df = df.sort_values("date", kind="stable").reset_index(drop=True)
+    print(f"Loaded saved dataset {DATASET_CSV} ({len(df)} rows) -- no API calls")
+    return _to_arrays(df)
+
+
+def get_dataset(target_mode=TARGET_MODE, rebuild=False):
+    """Use artifacts/dataset.csv when possible; otherwise build it from data_cache/ or the APIs."""
+    if not rebuild:
+        arrays = load_saved_dataset(target_mode)
+        if arrays is not None:
+            return arrays
+    print("Building dataset from data_cache/ (downloads anything that is not cached)")
+    return build_dataset(target_mode=target_mode)
 
 
 if __name__ == "__main__":

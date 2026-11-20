@@ -2,7 +2,12 @@
 Dynamic GPD tail-risk model -- local training on Alpaca + FRED + SEC EDGAR data.
 
 Run:
-    .venv/bin/python "TQT research machine learning part.py"
+    .venv/bin/python "TQT research machine learning part.py"            # reuse artifacts/dataset.csv
+    .venv/bin/python "TQT research machine learning part.py" --rebuild  # rebuild the dataset first
+
+By default the saved artifacts/dataset.csv is reused, so no API is called. With --rebuild
+(or when dataset.csv is missing / built with a different TARGET_MODE) the dataset is rebuilt
+from data_cache/, downloading only what is not cached yet.
 
 Outputs (artifacts/):
     dataset.csv              full X / Y table
@@ -14,6 +19,7 @@ Load later with:
     tf.keras.models.load_model("artifacts/gpd_model.keras", compile=False)
 """
 
+import argparse
 import json
 from datetime import datetime
 from pathlib import Path
@@ -31,7 +37,7 @@ INPUT_DIM = 10
 HIDDEN_UNITS = (16, 8)
 L2 = 1e-4
 
-LAMBDA_TAIL = 0.2
+LAMBDA_TAIL = 0.0
 LAMBDA_SEVERITY = 1.0
 
 # GPD peaks-over-threshold: loss L = -Y, threshold = this quantile of TRAINING losses
@@ -72,9 +78,9 @@ def build_network(name, neurons, use_bn=True):
 # 4. Prepare Data (real data: Alpaca + FRED + SEC EDGAR)
 # ==========================================
 
-def prepare_data():
+def prepare_data(rebuild=False):
 
-    X, Y, dates, tickers = features.build_dataset(target_mode=TARGET_MODE)
+    X, Y, dates, tickers = features.get_dataset(target_mode=TARGET_MODE, rebuild=rebuild)
     print(f"X shape {X.shape}, Y shape {Y.shape}")
 
     # Chronological split by DATE (no same-day leakage across stocks)
@@ -241,9 +247,14 @@ def save_artifacts(gpd_model, history, data, scale):
 
 def main():
 
+    parser = argparse.ArgumentParser(description="Train the dynamic GPD model")
+    parser.add_argument("--rebuild", action="store_true",
+                        help="rebuild artifacts/dataset.csv from data_cache/ / the APIs before training")
+    args = parser.parse_args()
+
     tf.keras.utils.set_random_seed(SEED)
 
-    data = prepare_data()
+    data = prepare_data(rebuild=args.rebuild)
 
     # Reference scale for GPD parameters and loss
     SCALE = max(float(np.median(data["yg_train"])), 1e-4)

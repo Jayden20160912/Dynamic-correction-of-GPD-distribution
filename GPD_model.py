@@ -87,7 +87,8 @@ def returns_to_exceedances(returns, threshold: float) -> np.ndarray:
 COLORS = ["#2a6fdb", "#d9480f", "#2b8a3e", "#862e9c", "#c2255c", "#0b7285"]
 
 
-def plot_gpd(xis, betas, threshold: float | None = None, save: str | None = None):
+def plot_gpd(xis, betas, threshold: float | None = None, save: str | None = None,
+             show: bool = True):
     """
     Plot the GPD for one or more (xi, beta) pairs.
     Left: density on a linear y-axis (overall shape/width, mainly driven by beta)
@@ -150,8 +151,9 @@ def plot_gpd(xis, betas, threshold: float | None = None, save: str | None = None
     if save:
         fig.savefig(save, dpi=150)
         print(f"Figure saved to {save}")
-    else:
+    elif show:
         plt.show()
+    # show=False and no save: return the figure so the caller can annotate it first
     return fig
 
 
