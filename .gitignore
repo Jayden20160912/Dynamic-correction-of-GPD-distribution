@@ -12,3 +12,6 @@ data_cache/
 artifacts/dataset.csv
 backup_dataset_32stocks/
 backup_dataset_300stocks_10factors/
+backup_lambda_tail_0.2/
+backup_shared_224_88_dropout_l2/
+backup_shared_224_88_no_dropout/
