@@ -1,0 +1,5 @@
+ticker,date,action,note
+AWI,2016-04-04,spinoff_backadjust,Armstrong Flooring spin-off not adjusted by Alpaca (fake -57% day)
+WYN,2018-06-01,spinoff_backadjust,Wyndham Hotels & Resorts spin-off not adjusted by Alpaca (fake -55% day)
+UTX,2020-04-03,spinoff_backadjust,Carrier/Otis spin-offs + Raytheon merger not adjusted by Alpaca (fake -71% day)
+XPO,2021-08-02,spinoff_backadjust,GXO Logistics spin-off not adjusted by Alpaca (fake -39% day)

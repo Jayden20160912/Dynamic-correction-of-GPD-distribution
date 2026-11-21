@@ -10,3 +10,5 @@ API.env
 .env
 data_cache/
 artifacts/dataset.csv
+backup_dataset_32stocks/
+backup_dataset_300stocks_10factors/

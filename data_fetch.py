@@ -78,49 +78,62 @@ def get_key(name):
 # 1. Alpaca daily bars
 # ==========================================
 
-def fetch_alpaca_bars(tickers, start="2016-01-01", end="2024-12-31", refresh=False):
+def fetch_alpaca_bars(tickers, start="2016-01-01", end="2024-12-31", refresh=False,
+                      asof=None, require_all=True):
     """Adjusted daily bars for all tickers.
+
+    asof: Alpaca symbol mapping date. "2016-01-04" means "the company that used this ticker on
+          2016-01-04", followed through later renames (e.g. FB -> META) and NOT switching to a
+          different company that reuses the ticker later. "-" = no mapping (plain ticker).
+          None = Alpaca default (the company using the ticker today).
+    Each asof setting has its own cache file, so caches never mix.
 
     Returns a DataFrame with columns: ticker, date, open, high, low, close, volume
     (date = New York trading date, tz-naive).
     """
-    cache = CACHE_DIR / "alpaca_bars.parquet"
+    tag = "" if asof is None else ("_plain" if asof == "-" else f"_asof{asof}")
+    cache = CACHE_DIR / f"alpaca_bars{tag}.parquet"
     if cache.exists() and not refresh:
         df = pd.read_parquet(cache)
         if set(tickers) <= set(df["ticker"].unique()):
             return df[df["ticker"].isin(tickers)].reset_index(drop=True)
-        print("Alpaca cache does not cover all tickers, downloading again")
+        print(f"Alpaca cache {cache.name} does not cover all tickers, downloading again")
 
     headers = {
         "APCA-API-KEY-ID": get_key("ALPACA_API_KEY_ID"),
         "APCA-API-SECRET-KEY": get_key("ALPACA_API_SECRET_KEY"),
         "accept": "application/json",
     }
-    params = {
-        "symbols": ",".join(tickers),
-        "timeframe": "1Day",
-        "start": f"{start}T00:00:00Z",
-        "end": f"{end}T23:59:59Z",
-        "limit": 10000,          # total across all symbols, not per symbol
-        "adjustment": "all",     # split + dividend adjusted (no fake crashes on split days)
-        "feed": "sip",           # full-market volume / range
-        "sort": "asc",
-    }
 
-    rows, page, token = [], 0, None
-    while True:
-        if token:
-            params["page_token"] = token
-        resp = _get_with_retry(ALPACA_BARS_URL, headers=headers, params=params)
-        payload = resp.json()
-        for sym, bars in (payload.get("bars") or {}).items():
-            for b in bars:
-                rows.append((sym, b["t"], b["o"], b["h"], b["l"], b["c"], b["v"]))
-        page += 1
-        print(f"Alpaca page {page}: {len(rows)} bars so far")
-        token = payload.get("next_page_token")
-        if not token:
-            break
+    rows, page = [], 0
+    tickers = list(dict.fromkeys(tickers))
+    for i in range(0, len(tickers), 100):              # keep the URL short
+        params = {
+            "symbols": ",".join(tickers[i:i + 100]),
+            "timeframe": "1Day",
+            "start": f"{start}T00:00:00Z",
+            "end": f"{end}T23:59:59Z",
+            "limit": 10000,          # total across all symbols, not per symbol
+            "adjustment": "all",     # split + dividend adjusted (no fake crashes on split days)
+            "feed": "sip",           # full-market volume / range
+            "sort": "asc",
+        }
+        if asof is not None:
+            params["asof"] = asof
+        token = None
+        while True:
+            if token:
+                params["page_token"] = token
+            resp = _get_with_retry(ALPACA_BARS_URL, headers=headers, params=params)
+            payload = resp.json()
+            for sym, bars in (payload.get("bars") or {}).items():
+                for b in bars:
+                    rows.append((sym, b["t"], b["o"], b["h"], b["l"], b["c"], b["v"]))
+            page += 1
+            print(f"Alpaca page {page}: {len(rows)} bars so far")
+            token = payload.get("next_page_token")
+            if not token:
+                break
 
     if not rows:
         raise RuntimeError("Alpaca returned no bars -- check the keys and the request parameters")
@@ -132,7 +145,7 @@ def fetch_alpaca_bars(tickers, start="2016-01-01", end="2024-12-31", refresh=Fal
             .sort_values(["ticker", "date"]).reset_index(drop=True))
 
     missing = sorted(set(tickers) - set(df["ticker"].unique()))
-    if missing:
+    if missing and require_all:
         raise RuntimeError(f"Alpaca returned no data for: {missing}")
 
     CACHE_DIR.mkdir(parents=True, exist_ok=True)

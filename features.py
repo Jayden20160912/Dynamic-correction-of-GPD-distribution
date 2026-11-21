@@ -3,6 +3,11 @@ Build X (N x 10), Y (N x 1), dates, tickers for the dynamic GPD model.
 
 Row t of X uses only information known at the close of day t (no look-ahead);
 Y_t is the realised return of the NEXT trading day.
+
+Stock universe: universe/selected_universe_300.csv -- 300 stocks chosen with information
+available in January 2016 only (stratified by 2016 market cap and sector, delisted stocks
+included). Each stock is identified by its 2016 ticker + SEC CIK; its price history is
+cut at the verified `history_end` (delisting / acquisition date).
 """
 
 from __future__ import annotations
@@ -28,18 +33,22 @@ SEC_LOOKBACK_DAYS = 550      # need one prior 10-K before DATA_START for the fir
 #   "overnight"     : Y_t = Open(t+1)  / Close(t) - 1
 TARGET_MODE = "close_to_close"
 
-# Fixed cross-sector large-cap universe that traded through the whole window
-# (survivorship bias: must be stated in the report)
-TICKERS = [
-    "AAPL", "MSFT", "AMZN", "GOOGL", "NVDA", "INTC", "CSCO", "ORCL", "IBM",
-    "JPM", "BAC", "WFC", "GS",
-    "XOM", "CVX",
-    "JNJ", "PFE", "MRK", "UNH",
-    "PG", "KO", "PEP", "WMT",
-    "HD", "MCD", "NKE", "DIS",
-    "CAT", "BA", "MMM",
-    "T", "VZ",
-]
+# Point-in-time universe (see universe/screening_scripts/ for how it was selected).
+# The old 32 large caps and their dataset are kept in backup_dataset_32stocks/.
+UNIVERSE_CSV = ROOT / "universe" / "selected_universe_300.csv"
+ALPACA_ASOF = "2016-01-04"        # tickers mean "the company using this ticker on this date"
+CONTINUATION_GAP_DAYS = 7         # asof history ending this long before history_end -> link break
+
+
+def load_universe():
+    u = pd.read_csv(UNIVERSE_CSV, dtype={"symbol_2016": str})
+    u["cik"] = u["cik"].astype(int)
+    u["history_end"] = pd.to_datetime(u["history_end"]).clip(upper=pd.Timestamp(DATA_END))
+    return u.set_index("symbol_2016")
+
+
+UNIVERSE = load_universe()
+TICKERS = UNIVERSE.index.tolist()
 
 FEATURE_NAMES = [
     "vol_20d",          # 1  20-day annualised realised volatility
@@ -52,7 +61,36 @@ FEATURE_NAMES = [
     "vix",              # 8  CBOE VIX close (FRED VIXCLS)
     "n_8k_30d",         # 9  number of 8-K filings in the past 30 calendar days (SEC)
     "filing_change",    # 10 1 - cosine similarity of latest 10-K/10-Q vs previous same-type filing
+    "worst252",         # 11 largest single-day loss (-return) over the past 252 trading days
+    "e63",              # 12 max |return| 60-66 trading days before the loss day (~1 quarter ago)
+    "echo_q",           # 13 mean of the same max-|return| windows 63/126/189/252 days before the loss day
 ]
+HISTORY_FEATURES = ["worst252", "e63", "echo_q"]   # computed from the Y column itself
+
+
+def add_history_features(df):
+    """Add worst252, e63, echo_q to a dataset with columns date, ticker, Y.
+
+    Row t has Y_t = return realised on the NEXT trading day (the "loss day", t+1).
+    The return realised k trading days before the loss day is Y shifted by k rows
+    within the same stock, so every value used here is known at the close of day t.
+    """
+    df = df.sort_values(["ticker", "date"], kind="stable").copy()
+    g = df.groupby("ticker", sort=False)["Y"]
+    past = lambda k: g.shift(k)                      # return realised k days before the loss day
+
+    # worst252: returns of the 252 days up to and including day t (k = 1..252)
+    loss = -past(1)
+    df["worst252"] = loss.groupby(df["ticker"]).transform(
+        lambda s: s.rolling(252, min_periods=60).max())
+
+    def window_max(center):                          # max |r| over k = center-3 .. center+3
+        return pd.concat([past(k).abs() for k in range(center - 3, center + 4)], axis=1).max(axis=1)
+
+    windows = pd.concat([window_max(c) for c in (63, 126, 189, 252)], axis=1)
+    df["e63"] = windows.iloc[:, 0]
+    df["echo_q"] = windows.mean(axis=1)               # mean of the windows that exist so far
+    return df.sort_values("date", kind="stable").reset_index(drop=True)
 
 _HASHER = HashingVectorizer(
     n_features=2 ** 18,
@@ -127,19 +165,77 @@ def sec_factors(ticker, cik, dates):
 
 
 # ---------- assemble X, Y ----------
+def load_price_history(refresh=False):
+    """Clean daily bars for every universe stock, one entity per 2016 ticker.
+
+    1. Bars of the company that used the ticker on ALPACA_ASOF (handles renames and reuse).
+    2. Where Alpaca's asof link breaks at a corporate action although the same company keeps
+       trading (checked against SEC filings during selection), append the plain-ticker bars
+       up to history_end.
+    3. Cut at history_end (delisting / acquisition) and drop zero-volume bars: after a
+       delisting Alpaca can keep returning frozen, zero-volume prices for years.
+    """
+    bars = data_fetch.fetch_alpaca_bars(TICKERS, DATA_START, DATA_END, refresh=refresh,
+                                        asof=ALPACA_ASOF)
+    last = bars.groupby("ticker")["date"].max()
+    gap = UNIVERSE["history_end"] - last.reindex(UNIVERSE.index)
+    cont = gap[gap > pd.Timedelta(days=CONTINUATION_GAP_DAYS)].index.tolist()
+    if cont:
+        plain = data_fetch.fetch_alpaca_bars(cont, DATA_START, DATA_END, refresh=refresh,
+                                             asof="-", require_all=False)
+        plain = plain[plain["date"] > plain["ticker"].map(last)]
+        bars = pd.concat([bars, plain], ignore_index=True)
+        print(f"Appended plain-ticker continuation for {len(cont)} stocks: {', '.join(cont)}")
+
+    bars = bars[bars["date"] <= bars["ticker"].map(UNIVERSE["history_end"])]
+    n_before = len(bars)
+    bars = bars[bars["volume"] > 0]
+    print(f"Dropped {n_before - len(bars)} zero-volume bars")
+    bars = bars.sort_values(["ticker", "date"]).reset_index(drop=True)
+    return apply_price_fixes(bars)
+
+
+PRICE_FIXES_CSV = ROOT / "universe" / "price_fixes.csv"
+
+
+def apply_price_fixes(bars):
+    """Back-adjust spin-offs that Alpaca left unadjusted (listed in universe/price_fixes.csv).
+
+    All prices before the spin-off date are scaled so the close-to-close return on that day
+    is 0 instead of a fake crash; the true (small) market return of that day is lost.
+    """
+    if not PRICE_FIXES_CSV.exists():
+        return bars
+    fixes = pd.read_csv(PRICE_FIXES_CSV, parse_dates=["date"])
+    for fx in fixes[fixes["action"] == "spinoff_backadjust"].itertuples():
+        stock = bars["ticker"] == fx.ticker
+        on_day = stock & (bars["date"] == fx.date)
+        before = stock & (bars["date"] < fx.date)
+        if not on_day.any() or not before.any():
+            print(f"price fix skipped (no bars): {fx.ticker} {fx.date.date()}")
+            continue
+        prev_close = bars.loc[before, "close"].iloc[-1]
+        factor = bars.loc[on_day, "close"].iloc[0] / prev_close
+        bars.loc[before, ["open", "high", "low", "close"]] *= factor
+        print(f"price fix: {fx.ticker} {fx.date.date()} spin-off back-adjusted (factor {factor:.3f})")
+    return bars
+
+
 def build_dataset(target_mode=TARGET_MODE, refresh=False, save=True):
     """Returns X (N,10) float32, Y (N,1) float32, dates (N,), tickers (N,), sorted by date."""
-    bars = data_fetch.fetch_alpaca_bars(TICKERS, DATA_START, DATA_END, refresh=refresh)
+    bars = load_price_history(refresh=refresh)
     vix = data_fetch.fetch_vix(refresh=refresh).ffill()
-    ciks = data_fetch.ticker_to_cik(TICKERS)
 
     parts = []
-    for t in TICKERS:
+    for i, t in enumerate(TICKERS, 1):
         px = bars[bars["ticker"] == t].set_index("date").sort_index()
+        if len(px) < 80:                 # not enough history for the 60-day factors + target
+            print(f"{t}: only {len(px)} bars, skipped")
+            continue
         f, y = price_factors(px, target_mode)
         f["vix"] = vix.reindex(f.index, method="ffill")
 
-        n_8k, change = sec_factors(t, ciks[t], f.index.to_series())
+        n_8k, change = sec_factors(t, int(UNIVERSE.at[t, "cik"]), f.index.to_series())
         f["n_8k_30d"] = n_8k
         f["filing_change"] = change
 
@@ -149,10 +245,10 @@ def build_dataset(target_mode=TARGET_MODE, refresh=False, save=True):
         f = f.dropna(subset=FEATURE_NAMES[:8] + ["Y"])
         f.insert(0, "ticker", t)
         parts.append(f)
-        print(f"{t}: {len(f)} rows")
+        print(f"[{i}/{len(TICKERS)}] {t}: {len(f)} rows", flush=True)
 
     df = pd.concat(parts).rename_axis("date").reset_index()
-    df = df.sort_values("date", kind="stable").reset_index(drop=True)   # chronological, stocks interleaved
+    df = add_history_features(df)   # chronological, stocks interleaved
     df = df[["date", "ticker"] + FEATURE_NAMES + ["Y"]]
 
     if save:
@@ -173,6 +269,7 @@ DATASET_INFO = ARTIFACT_DIR / "dataset_info.json"
 
 def _dataset_info(target_mode):
     return {"target_mode": target_mode, "data_start": DATA_START, "data_end": DATA_END,
+            "universe_file": UNIVERSE_CSV.relative_to(ROOT).as_posix(), "alpaca_asof": ALPACA_ASOF,
             "tickers": TICKERS, "feature_names": FEATURE_NAMES}
 
 

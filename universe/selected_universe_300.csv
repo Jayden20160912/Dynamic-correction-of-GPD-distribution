@@ -1,0 +1,301 @@
+symbol_2016,alpaca_current_symbols,sec_name,cik,sic,sector,size_bucket,mktcap_2016_usd_bn,price_jan2016,median_dollar_volume_jan2016_usd_mn,link_method,history_end,delisted_before_2025,history_note
+CTL,LUMN,"CENTURYLINK, INC",18926,4813,Communication Services,large (>10B),13.16,23.97,148.4,SEC ticker map,2024-12-31,False,
+LVLT,,LEVEL 3 COMMUNICATIONS INC,794323,4813,Communication Services,large (>10B),17.04,47.82,122.6,float/price check,2017-10-31,True,Alpaca asof link breaks on 2017-10-12; same company continues under plain ticker
+TWX,,TIME WARNER INC.,1105705,4841,Communication Services,large (>10B),55.8,69.79,615.4,float/price check,2018-06-14,True,delisted / acquired (last real trading day)
+AAP,AAP,ADVANCE AUTO PARTS INC,1158449,5531,Consumer Discretionary,large (>10B),10.78,147.05,167.5,SEC ticker map,2024-12-31,False,
+CMG,CMG,CHIPOTLE MEXICAN GRILL INC,1058090,5812,Consumer Discretionary,large (>10B),13.48,448.81,713.7,SEC ticker map,2024-12-31,False,
+DG,DG,DOLLAR GENERAL CORP,29534,5331,Consumer Discretionary,large (>10B),20.58,71.84,260.4,SEC ticker map,2024-12-31,False,
+DLPH,DLPH,DELPHI AUTOMOTIVE PLC,1521332,3714,Consumer Discretionary,large (>10B),18.73,67.47,247.3,name match,2017-12-04,True,Delphi Automotive became Aptiv on 2017-12-05; ticker followed the Delphi Technologies spin-off -> cut
+HD,HD,HOME DEPOT INC,354950,5211,Consumer Discretionary,large (>10B),153.21,122.28,958.4,SEC ticker map,2024-12-31,False,
+HSIC,HSIC,HENRY SCHEIN INC,1000228,5047,Consumer Discretionary,large (>10B),12.02,146.72,95.5,SEC ticker map,2024-12-31,False,
+LOW,LOW,LOWES COMPANIES INC,60667,5211,Consumer Discretionary,large (>10B),62.82,70.0,434.0,SEC ticker map,2024-12-31,False,
+MAR,MAR,MARRIOTT INTERNATIONAL INC /MD/,1048286,7011,Consumer Discretionary,large (>10B),15.63,61.65,301.9,SEC ticker map,2024-12-31,False,
+PCAR,PCAR,PACCAR INC,75362,3711,Consumer Discretionary,large (>10B),16.07,45.75,141.6,SEC ticker map,2024-12-31,False,
+TEL,TEL,TE CONNECTIVITY LTD.,1385157,5065,Consumer Discretionary,large (>10B),21.19,57.32,219.4,SEC ticker map,2024-12-31,False,
+TGT,TGT,TARGET CORP,27419,5331,Consumer Discretionary,large (>10B),42.59,70.99,443.4,SEC ticker map,2024-12-31,False,
+TSLA,TSLA,TESLA MOTORS INC,1318605,3711,Consumer Discretionary,large (>10B),27.03,204.72,840.9,SEC ticker map,2024-12-31,False,
+CPB,CPB,CAMPBELL SOUP CO,16732,2000,Consumer Staples,large (>10B),16.54,53.49,136.7,SEC ticker map,2024-12-31,False,
+CVS,CVS,CVS HEALTH CORP,64803,5912,Consumer Staples,large (>10B),103.79,94.48,560.3,SEC ticker map,2024-12-31,False,
+ESRX,ESRX,EXPRESS SCRIPTS HOLDING CO.,1532063,5912,Consumer Staples,large (>10B),47.18,74.59,574.8,float/price check,2018-12-20,True,delisted / acquired (last real trading day)
+GMCR,,"KEURIG GREEN MOUNTAIN, INC.",909954,2090,Consumer Staples,large (>10B),13.44,89.9,289.2,float/price check,2016-03-02,True,delisted / acquired (last real trading day)
+MO,MO,"ALTRIA GROUP, INC.",764180,2111,Consumer Staples,large (>10B),114.34,58.4,474.5,SEC ticker map,2024-12-31,False,
+PM,PM,PHILIP MORRIS INTERNATIONAL INC.,1413329,2111,Consumer Staples,large (>10B),135.52,87.47,494.6,SEC ticker map,2024-12-31,False,
+SJM,SJM,J M SMUCKER CO,91419,2033,Consumer Staples,large (>10B),14.56,121.67,132.9,SEC ticker map,2024-12-31,False,
+STZ,STZ,"CONSTELLATION BRANDS, INC.",16918,2080,Consumer Staples,large (>10B),21.12,146.11,278.7,SEC ticker map,2024-12-31,False,
+WBA,,"WALGREENS BOOTS ALLIANCE, INC.",1618921,5912,Consumer Staples,large (>10B),86.34,79.93,457.3,float/price check,2024-12-31,False,
+EOG,EOG,EOG RESOURCES INC,821189,1311,Energy,large (>10B),35.98,65.46,469.0,SEC ticker map,2024-12-31,False,
+HES,,HESS CORP,4447,2911,Energy,large (>10B),12.54,39.6,287.5,float/price check,2024-12-31,False,
+IMO,IMO,IMPERIAL OIL LTD,49938,2911,Energy,large (>10B),24.61,29.03,12.9,SEC ticker map,2024-12-31,False,
+OXY,OXY,OCCIDENTAL PETROLEUM CORP /DE/,797468,1311,Energy,large (>10B),48.29,63.23,511.8,SEC ticker map,2024-12-31,False,
+SLB,SLB,SCHLUMBERGER LTD /NV/,87347,1389,Energy,large (>10B),81.5,65.08,859.3,SEC ticker map,2024-12-31,False,
+ALL,ALL,ALLSTATE CORP,899051,6331,Financials,large (>10B),22.1,58.42,194.3,SEC ticker map,2024-12-31,False,
+AMTD,AMTD,TD AMERITRADE HOLDING CORP,1173431,6211,Financials,large (>10B),15.58,29.11,129.6,float/price check,2020-10-05,True,delisted / acquired (last real trading day)
+BK,BNY,BANK OF NEW YORK MELLON CORP,1390777,6022,Financials,large (>10B),39.01,36.22,304.8,SEC ticker map,2024-12-31,False,
+C,C,CITIGROUP INC,831001,6021,Financials,large (>10B),124.97,42.58,1352.1,SEC ticker map,2024-12-31,False,
+CFG,CFG,CITIZENS FINANCIAL GROUP INC/RI,759944,6022,Financials,large (>10B),11.78,22.32,221.5,SEC ticker map,2024-12-31,False,
+FITB,FITB,FIFTH THIRD BANCORP,35527,6022,Financials,large (>10B),13.41,17.12,218.6,SEC ticker map,2024-12-31,False,
+HIG,HIG,HARTFORD FINANCIAL SERVICES GROUP INC/DE,874766,6331,Financials,large (>10B),16.42,40.09,145.0,SEC ticker map,2024-12-31,False,
+IVZ,IVZ,INVESCO LTD.,914208,6282,Financials,large (>10B),12.3,29.48,164.4,SEC ticker map,2024-12-31,False,
+MKL,MKL,MARKEL CORP,1096343,6331,Financials,large (>10B),11.77,842.98,60.0,SEC ticker map,2024-12-31,False,
+PFG,PFG,PRINCIPAL FINANCIAL GROUP INC,1126328,6321,Financials,large (>10B),11.1,38.06,83.6,SEC ticker map,2024-12-31,False,
+RF,RF,REGIONS FINANCIAL CORP,1281761,6021,Financials,large (>10B),10.56,8.2,227.6,SEC ticker map,2024-12-31,False,
+SYF,SYF,SYNCHRONY FINANCIAL,1601712,6199,Financials,large (>10B),23.75,28.48,283.4,SEC ticker map,2024-12-31,False,
+TRV,TRV,"TRAVELERS COMPANIES, INC.",86312,6331,Financials,large (>10B),31.26,105.99,266.3,SEC ticker map,2024-12-31,False,
+BCR,,BARD C R INC /NJ/,9892,3841,Health Care,large (>10B),13.21,180.18,118.1,float/price check,2017-12-28,True,delisted / acquired (last real trading day)
+BMRN,BMRN,BIOMARIN PHARMACEUTICAL INC,1048477,2834,Health Care,large (>10B),13.68,84.66,159.6,SEC ticker map,2024-12-31,False,
+BMY,BMY,BRISTOL MYERS SQUIBB CO,14272,2834,Health Care,large (>10B),105.52,63.21,590.6,SEC ticker map,2024-12-31,False,
+CAH,CAH,CARDINAL HEALTH INC,721371,5122,Health Care,large (>10B),26.87,81.58,223.1,SEC ticker map,2024-12-31,False,
+EW,EW,EDWARDS LIFESCIENCES CORP,1099800,3842,Health Care,large (>10B),16.68,77.75,168.9,SEC ticker map,2024-12-31,False,
+ISRG,ISRG,INTUITIVE SURGICAL INC,1035267,3842,Health Care,large (>10B),20.46,547.39,299.5,SEC ticker map,2024-12-31,False,
+LH,LH,LABORATORY CORP OF AMERICA HOLDINGS,920148,8071,Health Care,large (>10B),11.41,112.7,122.5,SEC ticker map,2024-12-31,False,
+MDT,MDT,MEDTRONIC PLC,1613103,3845,Health Care,large (>10B),104.78,74.79,524.0,SEC ticker map,2024-12-31,False,
+MRK,MRK,"MERCK & CO., INC.",310158,2834,Health Care,large (>10B),142.23,51.25,749.6,SEC ticker map,2024-12-31,False,
+REGN,REGN,REGENERON PHARMACEUTICALS INC,872589,2834,Health Care,large (>10B),50.63,473.12,529.3,SEC ticker map,2024-12-31,False,
+STJ,,ST JUDE MEDICAL INC,203077,3845,Health Care,large (>10B),15.51,54.88,156.8,float/price check,2017-01-04,True,delisted / acquired (last real trading day)
+AAL,AAL,AMERICAN AIRLINES GROUP INC.,6201,4512,Industrials,large (>10B),25.28,40.1,493.2,SEC ticker map,2024-12-31,False,
+CAM,CAM,CAMERON INTERNATIONAL CORP,941548,3533,Industrials,large (>10B),11.48,59.93,170.4,float/price check,2016-04-01,True,delisted / acquired (last real trading day)
+CAT,CAT,CATERPILLAR INC,18230,3531,Industrials,large (>10B),35.66,61.08,569.5,SEC ticker map,2024-12-31,False,
+CCL,CCL,CARNIVAL CORP,815097,4400,Industrials,large (>10B),28.01,49.83,366.9,SEC ticker map,2024-12-31,False,
+CP,CP,CANADIAN PACIFIC RAILWAY LTD/CN,16875,4011,Industrials,large (>10B),23.58,112.67,132.3,SEC ticker map,2024-12-31,False,
+DAL,DAL,"DELTA AIR LINES, INC.",27904,4512,Industrials,large (>10B),35.58,46.11,579.4,SEC ticker map,2024-12-31,False,
+EBAY,EBAY,EBAY INC,1065088,7389,Industrials,large (>10B),30.75,26.09,374.5,SEC ticker map,2024-12-31,False,
+LMT,LMT,LOCKHEED MARTIN CORP,936468,3760,Industrials,large (>10B),64.91,213.21,411.1,SEC ticker map,2024-12-31,False,Alpaca asof link breaks on 2016-08-15; same company continues under plain ticker
+NCLH,NCLH,NORWEGIAN CRUISE LINE HOLDINGS LTD.,1513761,4400,Industrials,large (>10B),11.15,48.61,110.2,SEC ticker map,2024-12-31,False,
+NWL,NWL,NEWELL RUBBERMAID INC,814453,3089,Industrials,large (>10B),10.18,37.97,234.9,SEC ticker map,2024-12-31,False,
+OMC,OMC,OMNICOM GROUP INC.,29989,7311,Industrials,large (>10B),16.92,70.61,131.7,SEC ticker map,2024-12-31,False,
+TDG,TDG,TRANSDIGM GROUP INC,1260221,3728,Industrials,large (>10B),11.91,222.83,160.4,SEC ticker map,2024-12-31,False,
+TXT,TXT,TEXTRON INC,217346,3720,Industrials,large (>10B),10.23,37.73,93.6,SEC ticker map,2024-12-31,False,
+UAL,UAL,"UNITED CONTINENTAL HOLDINGS, INC.",100517,4512,Industrials,large (>10B),17.19,47.83,404.3,SEC ticker map,2024-12-31,False,
+UTX,RTX,UNITED TECHNOLOGIES CORP /DE/,101829,3724,Industrials,large (>10B),73.38,87.69,701.1,SEC ticker map,2024-12-31,False,
+A,A,AGILENT TECHNOLOGIES INC,1090872,3826,Information Technology,large (>10B),12.49,37.61,112.0,SEC ticker map,2024-12-31,False,
+AAPL,AAPL,APPLE INC,320193,3571,Information Technology,large (>10B),539.99,97.39,6952.9,SEC ticker map,2024-12-31,False,
+ADI,ADI,ANALOG DEVICES INC,6281,3674,Information Technology,large (>10B),15.86,51.17,183.0,SEC ticker map,2024-12-31,False,
+AMAT,AMAT,APPLIED MATERIALS INC /DE,6951,3674,Information Technology,large (>10B),19.32,16.81,311.1,SEC ticker map,2024-12-31,False,
+APH,APH,AMPHENOL CORP /DE/,820313,3678,Information Technology,large (>10B),14.72,47.78,113.0,SEC ticker map,2024-12-31,False,
+ATVI,,"ACTIVISION BLIZZARD, INC.",718877,7372,Information Technology,large (>10B),25.81,35.3,317.3,float/price check,2023-10-13,True,delisted / acquired (last real trading day)
+CA,,"CA, INC.",356028,7372,Information Technology,large (>10B),11.14,26.73,104.2,float/price check,2018-11-05,True,delisted / acquired (last real trading day)
+CTSH,CTSH,COGNIZANT TECHNOLOGY SOLUTIONS CORP,1058290,7371,Information Technology,large (>10B),36.03,59.25,329.6,SEC ticker map,2024-12-31,False,
+EMR,EMR,EMERSON ELECTRIC CO,32604,3600,Information Technology,large (>10B),28.17,43.8,230.3,SEC ticker map,2024-12-31,False,
+RHT,RHT,RED HAT INC,1087423,7370,Information Technology,large (>10B),13.44,73.57,159.0,float/price check,2019-07-08,True,delisted / acquired (last real trading day)
+ROP,ROP,ROPER TECHNOLOGIES INC,882835,3823,Information Technology,large (>10B),17.26,170.76,97.2,SEC ticker map,2024-12-31,False,
+SNDK,,SANDISK CORP,1000180,3572,Information Technology,large (>10B),14.37,71.48,293.2,name match,2016-05-12,True,delisted / acquired (last real trading day)
+TMO,TMO,THERMO FISHER SCIENTIFIC INC.,97745,3829,Information Technology,large (>10B),53.39,134.73,409.8,SEC ticker map,2024-12-31,False,
+WAT,WAT,WATERS CORP /DE/,1000697,3826,Information Technology,large (>10B),10.31,126.24,83.4,SEC ticker map,2024-12-31,False,
+WDAY,WDAY,"WORKDAY, INC.",1327811,7374,Information Technology,large (>10B),13.55,69.47,141.5,SEC ticker map,2024-12-31,False,Alpaca asof link breaks on 2017-09-19; same company continues under plain ticker
+LYB,LYB,LYONDELLBASELL INDUSTRIES N.V.,1489393,2860,Materials,large (>10B),33.45,77.39,366.6,SEC ticker map,2024-12-31,False,
+NUE,NUE,NUCOR CORP,73309,3312,Materials,large (>10B),11.58,36.22,131.0,SEC ticker map,2024-12-31,False,
+PPG,PPG,PPG INDUSTRIES INC,79879,2851,Materials,large (>10B),24.88,93.52,214.0,SEC ticker map,2024-12-31,False,
+PX,,PRAXAIR INC,884905,2810,Materials,large (>10B),28.0,98.14,207.3,float/price check,2018-10-30,True,delisted / acquired (last real trading day)
+AMT,AMT,AMERICAN TOWER CORP /MA/,1053507,6798,Real Estate,large (>10B),39.18,92.51,279.8,SEC ticker map,2024-12-31,False,
+BXP,BXP,BOSTON PROPERTIES INC,1037540,6798,Real Estate,large (>10B),18.33,119.33,108.6,SEC ticker map,2024-12-31,False,
+FRT,FRT,FEDERAL REALTY INVESTMENT TRUST,34903,6798,Real Estate,large (>10B),10.23,146.81,75.1,SEC ticker map,2024-12-31,False,
+HCN,WELL,WELLTOWER INC.,766704,6798,Real Estate,large (>10B),23.71,66.75,210.5,SEC ticker map,2024-12-31,False,
+PLD,PLD,"PROLOGIS, INC.",1045609,6798,Real Estate,large (>10B),20.81,39.65,157.6,SEC ticker map,2024-12-31,False,
+SPG,SPG,SIMON PROPERTY GROUP INC /DE/,1063761,6798,Real Estate,large (>10B),53.15,186.28,281.8,SEC ticker map,2024-12-31,False,
+D,D,DOMINION RESOURCES INC /VA/,715957,4911,Utilities,large (>10B),41.4,69.41,259.1,SEC ticker map,2024-12-31,False,
+EIX,EIX,EDISON INTERNATIONAL,827052,4911,Utilities,large (>10B),19.35,59.38,158.0,SEC ticker map,2024-12-31,False,
+RSG,RSG,"REPUBLIC SERVICES, INC.",1060391,4953,Utilities,large (>10B),15.07,43.7,107.4,SEC ticker map,2024-12-31,False,
+WEC,WEC,"WEC ENERGY GROUP, INC.",783325,4931,Utilities,large (>10B),16.65,52.75,132.5,SEC ticker map,2024-12-31,False,
+WM,WM,WASTE MANAGEMENT INC,823768,4953,Utilities,large (>10B),23.37,52.45,143.2,SEC ticker map,2024-12-31,False,
+WMB,WMB,WILLIAMS COMPANIES INC,107263,4922,Utilities,large (>10B),14.45,19.27,400.4,SEC ticker map,2024-12-31,False,Alpaca asof link breaks on 2016-06-28; same company continues under plain ticker
+XEL,XEL,XCEL ENERGY INC,72903,4931,Utilities,large (>10B),18.54,36.53,147.2,SEC ticker map,2024-12-31,False,
+CABO,CABO,"CABLE ONE, INC.",1632127,4841,Communication Services,mid (2-10B),2.44,421.95,16.2,SEC ticker map,2024-12-31,False,
+P,,"PANDORA MEDIA, INC.",1230276,4832,Communication Services,mid (2-10B),2.08,9.73,81.4,float/price check,2019-01-31,True,delisted / acquired (last real trading day)
+ALSN,ALSN,ALLISON TRANSMISSION HOLDINGS INC,1411207,3714,Consumer Discretionary,mid (2-10B),4.02,23.47,32.6,SEC ticker map,2024-12-31,False,
+BWLD,,BUFFALO WILD WINGS INC,1062449,5812,Consumer Discretionary,mid (2-10B),2.87,152.3,73.5,float/price check,2018-02-02,True,delisted / acquired (last real trading day)
+DNKN,DNKN,"DUNKIN' BRANDS GROUP, INC.",1357204,5810,Consumer Discretionary,mid (2-10B),3.55,38.36,87.8,name match,2020-12-14,True,delisted / acquired (last real trading day)
+HDS,HDS,"HD SUPPLY HOLDINGS, INC.",1573097,5000,Consumer Discretionary,mid (2-10B),5.27,26.27,73.5,name match,2020-12-23,True,delisted / acquired (last real trading day)
+INT,"INT,WKC",WORLD FUEL SERVICES CORP,789460,5172,Consumer Discretionary,mid (2-10B),2.69,37.98,20.7,SEC ticker map,2024-12-31,False,
+JCP,,J C PENNEY CO INC,1166126,5311,Consumer Discretionary,mid (2-10B),2.15,7.0,115.2,float/price check,2020-05-18,True,delisted / acquired (last real trading day)
+KATE,,KATE SPADE & CO,352363,2330,Consumer Discretionary,mid (2-10B),2.12,16.62,43.6,float/price check,2017-07-11,True,delisted / acquired (last real trading day)
+MSM,MSM,MSC INDUSTRIAL DIRECT CO INC,1003078,5084,Consumer Discretionary,mid (2-10B),3.47,59.51,44.4,SEC ticker map,2024-12-31,False,
+MTN,MTN,VAIL RESORTS INC,812011,7990,Consumer Discretionary,mid (2-10B),4.42,122.0,38.3,SEC ticker map,2024-12-31,False,
+PAG,PAG,"PENSKE AUTOMOTIVE GROUP, INC.",1019849,5500,Consumer Discretionary,mid (2-10B),3.02,33.54,31.6,SEC ticker map,2024-12-31,False,
+POOL,POOL,POOL CORP,945841,5090,Consumer Discretionary,mid (2-10B),3.28,77.1,22.8,SEC ticker map,2024-12-31,False,
+PSMT,PSMT,PRICESMART INC,1041803,5331,Consumer Discretionary,mid (2-10B),2.29,75.3,12.7,SEC ticker map,2024-12-31,False,
+SHO,SHO,"SUNSTONE HOTEL INVESTORS, INC.",1295810,7011,Consumer Discretionary,mid (2-10B),2.47,11.45,40.4,SEC ticker map,2024-12-31,False,
+WYN,TNL,WYNDHAM WORLDWIDE CORP,1361658,7011,Consumer Discretionary,mid (2-10B),7.47,66.74,124.3,SEC ticker map,2024-12-31,False,
+HAIN,HAIN,HAIN CELESTIAL GROUP INC,910406,2000,Consumer Staples,mid (2-10B),3.75,36.42,67.0,SEC ticker map,2024-12-31,False,
+INGR,INGR,INGREDION INC,1046257,2040,Consumer Staples,mid (2-10B),6.53,91.22,49.1,SEC ticker map,2024-12-31,False,
+POST,POST,"POST HOLDINGS, INC.",1530950,2040,Consumer Staples,mid (2-10B),3.65,56.97,52.7,SEC ticker map,2024-12-31,False,
+COG,,CABOT OIL & GAS CORP,858470,1311,Energy,mid (2-10B),7.12,17.2,178.8,float/price check,2024-12-31,False,
+IEP,IEP,ICAHN ENTERPRISES L.P.,813762,2911,Energy,mid (2-10B),7.47,56.83,7.5,SEC ticker map,2024-12-31,False,
+MRD,,MEMORIAL RESOURCE DEVELOPMENT CORP.,1599222,1311,Energy,mid (2-10B),2.96,14.43,31.0,float/price check,2016-09-15,True,delisted / acquired (last real trading day)
+RES,RES,RPC INC,742278,1389,Energy,mid (2-10B),2.37,10.93,35.8,SEC ticker map,2024-12-31,False,
+ANAT,ANAT,AMERICAN NATIONAL INSURANCE CO /TX/,904163,6311,Financials,mid (2-10B),2.59,96.13,3.2,name match,2022-05-24,True,delisted / acquired (last real trading day)
+AXS,AXS,AXIS CAPITAL HOLDINGS LTD,1214816,6331,Financials,mid (2-10B),5.22,54.2,31.8,SEC ticker map,2024-12-31,False,
+BOKF,BOKF,BOK FINANCIAL CORP ET AL,875357,6021,Financials,mid (2-10B),3.28,49.57,34.1,SEC ticker map,2024-12-31,False,
+CNO,CNO,"CNO FINANCIAL GROUP, INC.",1224608,6321,Financials,mid (2-10B),3.03,16.85,31.2,SEC ticker map,2024-12-31,False,
+IBKR,IBKR,"INTERACTIVE BROKERS GROUP, INC.",1381197,6211,Financials,mid (2-10B),2.74,34.1,38.1,SEC ticker map,2024-12-31,False,
+MKTX,MKTX,MARKETAXESS HOLDINGS INC,1278021,6211,Financials,mid (2-10B),3.94,105.73,27.3,SEC ticker map,2024-12-31,False,
+MTG,MTG,MGIC INVESTMENT CORP,876437,6351,Financials,mid (2-10B),2.52,7.41,53.8,SEC ticker map,2024-12-31,False,
+NAVI,NAVI,NAVIENT CORP,1593538,6211,Financials,mid (2-10B),3.12,9.45,57.4,name match,2024-12-31,False,
+ORI,ORI,OLD REPUBLIC INTERNATIONAL CORP,74260,6351,Financials,mid (2-10B),4.76,18.16,47.0,SEC ticker map,2024-12-31,False,
+RNR,RNR,RENAISSANCERE HOLDINGS LTD,913144,6331,Financials,mid (2-10B),4.89,111.52,46.1,SEC ticker map,2024-12-31,False,
+VOYA,VOYA,"VOYA FINANCIAL, INC.",1535929,6311,Financials,mid (2-10B),6.37,30.58,96.6,SEC ticker map,2024-12-31,False,
+WDR,WDR,WADDELL & REED FINANCIAL INC,1052100,6211,Financials,mid (2-10B),2.04,24.95,41.0,name match,2021-04-30,True,delisted / acquired (last real trading day)
+WRB,WRB,BERKLEY W R CORP,11544,6331,Financials,mid (2-10B),6.12,49.62,33.3,SEC ticker map,2024-12-31,False,
+WTFC,WTFC,WINTRUST FINANCIAL CORP,1015328,6022,Financials,mid (2-10B),2.11,43.61,18.1,SEC ticker map,2024-12-31,False,
+ALR,,ALERE INC.,1145460,2835,Health Care,mid (2-10B),3.24,37.59,48.5,float/price check,2017-10-02,True,delisted / acquired (last real trading day)
+DGX,DGX,QUEST DIAGNOSTICS INC,1022079,8071,Health Care,mid (2-10B),9.45,66.23,79.8,SEC ticker map,2024-12-31,False,
+EVHC,EVHC,"ENVISION HEALTHCARE HOLDINGS, INC.",1578318,8062,Health Care,mid (2-10B),4.36,23.37,71.2,float/price check,2016-12-01,True,Envision merged with AmSurg on 2016-12-02 (combined firm took the ticker) -> cut
+HZNP,,HORIZON PHARMA PLC,1492426,2834,Health Care,mid (2-10B),2.95,18.51,72.6,float/price check,2023-10-06,True,delisted / acquired (last real trading day)
+IPXL,AMRX,IMPAX LABORATORIES INC,1003642,2834,Health Care,mid (2-10B),2.81,38.72,25.0,float/price check,2024-12-31,False,
+RMD,RMD,RESMED INC,943819,3841,Health Care,mid (2-10B),7.51,53.66,78.9,SEC ticker map,2024-12-31,False,
+THC,THC,TENET HEALTHCARE CORP,70318,8062,Health Care,mid (2-10B),2.49,25.31,76.5,SEC ticker map,2024-12-31,False,
+AWI,AWI,ARMSTRONG WORLD INDUSTRIES INC,7431,3089,Industrials,mid (2-10B),2.21,39.95,23.3,SEC ticker map,2024-12-31,False,
+BFAM,BFAM,BRIGHT HORIZONS FAMILY SOLUTIONS INC.,1437578,8351,Industrials,mid (2-10B),3.87,64.51,14.9,SEC ticker map,2024-12-31,False,
+DLX,DLX,DELUXE CORP,27996,2780,Industrials,mid (2-10B),2.56,52.27,22.8,SEC ticker map,2024-12-31,False,
+DNB,DNB,DUN & BRADSTREET CORP/NW,1115222,7320,Industrials,mid (2-10B),3.47,95.97,22.3,name match,2019-02-07,True,delisted / acquired (last real trading day)
+FBHS,FBIN,"FORTUNE BRANDS HOME & SECURITY, INC.",1519751,1520,Industrials,mid (2-10B),7.6,48.21,83.8,SEC ticker map,2024-12-31,False,
+FDP,DMC,FRESH DEL MONTE PRODUCE INC,1047340,100,Industrials,mid (2-10B),2.02,39.36,8.8,SEC ticker map,2024-12-31,False,
+FLR,FLR,FLUOR CORP,1124198,1600,Industrials,mid (2-10B),5.96,42.89,93.7,SEC ticker map,2024-12-31,False,
+HOG,HOG,HARLEY DAVIDSON INC,793952,3751,Industrials,mid (2-10B),7.5,40.73,172.4,SEC ticker map,2024-12-31,False,
+INCR,,"INC RESEARCH HOLDINGS, INC.",1610950,8731,Industrials,mid (2-10B),2.48,43.97,22.8,float/price check,2023-09-28,True,delisted / acquired (last real trading day)
+KORS,CPRI,MICHAEL KORS HOLDINGS LTD,1530721,3100,Industrials,mid (2-10B),6.78,37.79,115.6,SEC ticker map,2024-12-31,False,
+LC,HAPN,LENDINGCLUB CORP,1409970,7389,Industrials,mid (2-10B),3.11,8.22,45.2,SEC ticker map,2024-12-31,False,
+LSTR,LSTR,LANDSTAR SYSTEM INC,853816,4213,Industrials,mid (2-10B),2.41,56.79,40.1,SEC ticker map,2024-12-31,False,
+NVR,NVR,NVR INC,906163,1531,Industrials,mid (2-10B),6.02,1552.32,52.2,SEC ticker map,2024-12-31,False,
+R,R,RYDER SYSTEM INC,85961,7510,Industrials,mid (2-10B),2.72,50.64,53.7,SEC ticker map,2024-12-31,False,
+TTC,TTC,TORO CO,737758,3524,Industrials,mid (2-10B),3.77,69.23,22.5,SEC ticker map,2024-12-31,False,
+VSTO,,VISTA OUTDOOR INC.,1616318,3480,Industrials,mid (2-10B),2.78,45.29,21.9,float/price check,2024-11-26,True,delisted / acquired (last real trading day)
+WFT,,WEATHERFORD INTERNATIONAL PLC,1603923,3533,Industrials,mid (2-10B),4.97,6.37,97.5,float/price check,2019-05-10,True,delisted / acquired (last real trading day)
+WU,WU,WESTERN UNION CO,1365135,7389,Industrials,mid (2-10B),8.55,17.03,94.9,SEC ticker map,2024-12-31,False,
+XPO,XPO,"XPO LOGISTICS, INC.",1166003,4700,Industrials,mid (2-10B),2.35,21.65,36.0,SEC ticker map,2024-12-31,False,
+CLGX,CLGX,"CORELOGIC, INC.",36047,7374,Information Technology,mid (2-10B),2.94,33.33,19.7,name match,2021-06-03,True,delisted / acquired (last real trading day)
+FCS,,FAIRCHILD SEMICONDUCTOR INTERNATIONAL INC,1036960,3674,Information Technology,mid (2-10B),2.32,20.48,42.7,float/price check,2016-09-16,True,delisted / acquired (last real trading day)
+FEIC,,FEI CO,914329,3826,Information Technology,mid (2-10B),2.9,70.86,17.6,float/price check,2016-09-19,True,delisted / acquired (last real trading day)
+HAR,,HARMAN INTERNATIONAL INDUSTRIES INC /DE/,800459,3651,Information Technology,mid (2-10B),5.74,80.63,110.4,float/price check,2017-03-10,True,delisted / acquired (last real trading day)
+IMS,,"IMS HEALTH HOLDINGS, INC.",1595262,7374,Information Technology,mid (2-10B),7.74,23.51,23.5,float/price check,2016-09-30,True,delisted / acquired (last real trading day)
+JBL,JBL,JABIL CIRCUIT INC,898293,3672,Information Technology,mid (2-10B),3.76,19.65,61.9,SEC ticker map,2024-12-31,False,
+JKHY,JKHY,HENRY JACK & ASSOCIATES INC,779152,7373,Information Technology,mid (2-10B),6.08,77.12,50.2,SEC ticker map,2024-12-31,False,
+JNPR,,JUNIPER NETWORKS INC,1043604,3576,Information Technology,mid (2-10B),9.98,26.09,157.0,float/price check,2024-12-31,False,
+MANH,MANH,MANHATTAN ASSOCIATES INC,1056696,7372,Information Technology,mid (2-10B),4.11,56.27,49.6,SEC ticker map,2024-12-31,False,
+MDRX,MDRX,"ALLSCRIPTS HEALTHCARE SOLUTIONS, INC.",1124804,7373,Information Technology,mid (2-10B),2.69,14.25,56.3,float/price check,2024-02-28,True,Allscripts/Veradigm delisted from Nasdaq in Feb 2024
+N,,NETSUITE INC,1117106,7372,Information Technology,mid (2-10B),5.75,72.4,46.3,float/price check,2016-11-04,True,delisted / acquired (last real trading day)
+SNPS,SNPS,SYNOPSYS INC,883241,7372,Information Technology,mid (2-10B),6.32,41.7,46.2,SEC ticker map,2024-12-31,False,
+TDC,TDC,TERADATA CORP /DE/,816761,3571,Information Technology,mid (2-10B),3.0,23.15,58.2,SEC ticker map,2024-12-31,False,
+VEEV,VEEV,VEEVA SYSTEMS INC,1393052,7372,Information Technology,mid (2-10B),2.4,24.72,31.3,SEC ticker map,2024-12-31,False,
+AXTA,AXTA,AXALTA COATING SYSTEMS LTD.,1616862,2851,Materials,mid (2-10B),5.72,24.03,59.9,SEC ticker map,2024-12-31,False,
+CBT,CBT,CABOT CORP,16040,2890,Materials,mid (2-10B),2.38,38.09,15.8,SEC ticker map,2024-12-31,False,
+UFS,UFS,DOMTAR CORP,1381531,2621,Materials,mid (2-10B),2.06,32.77,23.1,name match,2021-11-29,True,delisted / acquired (last real trading day)
+USG,USG,USG CORP,757011,3270,Materials,mid (2-10B),2.7,18.54,41.7,float/price check,2019-04-23,True,delisted / acquired (last real trading day)
+WLK,WLK,WESTLAKE CHEMICAL CORP,1262823,2860,Materials,mid (2-10B),5.94,45.48,44.7,SEC ticker map,2024-12-31,False,
+BDN,BDN,BRANDYWINE REALTY TRUST,790816,6798,Real Estate,mid (2-10B),2.23,12.71,31.8,SEC ticker map,2024-12-31,False,
+BRX,BRX,BRIXMOR PROPERTY GROUP INC.,1581068,6798,Real Estate,mid (2-10B),7.63,25.52,40.1,SEC ticker map,2024-12-31,False,
+DCT,DCT,DCT INDUSTRIAL TRUST INC.,1170991,6798,Real Estate,mid (2-10B),3.16,35.69,32.3,float/price check,2018-08-21,True,delisted / acquired (last real trading day)
+DFT,,"DUPONT FABROS TECHNOLOGY, INC.",1407739,6500,Real Estate,mid (2-10B),2.07,31.09,23.1,float/price check,2017-09-13,True,delisted / acquired (last real trading day)
+DRE,,DUKE REALTY LIMITED PARTNERSHIP/,1003410,6500,Real Estate,mid (2-10B),6.8,19.67,55.9,float/price check,2022-09-30,True,delisted / acquired (last real trading day)
+KRC,KRC,KILROY REALTY CORP,1025996,6798,Real Estate,mid (2-10B),5.29,57.3,47.9,SEC ticker map,2024-12-31,False,
+NLY,NLY,ANNALY CAPITAL MANAGEMENT INC,1043219,6798,Real Estate,mid (2-10B),8.73,9.21,94.1,SEC ticker map,2024-12-31,False,
+NNN,NNN,"NATIONAL RETAIL PROPERTIES, INC.",751364,6798,Real Estate,mid (2-10B),5.68,40.28,70.5,SEC ticker map,2024-12-31,False,
+NSAM,,NORTHSTAR ASSET MANAGEMENT GROUP INC.,1597503,6500,Real Estate,mid (2-10B),2.23,11.5,43.7,float/price check,2024-12-31,False,
+PGRE,,"PARAMOUNT GROUP, INC.",1605607,6798,Real Estate,mid (2-10B),3.58,16.9,14.1,float/price check,2024-12-31,False,
+WRI,WRI,WEINGARTEN REALTY INVESTORS /TX/,828916,6798,Real Estate,mid (2-10B),4.15,33.49,25.8,name match,2021-08-03,True,delisted / acquired (last real trading day)
+DPM,,"DCP MIDSTREAM PARTNERS, LP",1338065,4922,Utilities,mid (2-10B),2.21,19.3,24.5,float/price check,2023-06-14,True,delisted / acquired (last real trading day)
+ENLC,,"ENLINK MIDSTREAM, LLC",1592000,4922,Utilities,mid (2-10B),2.28,12.65,9.5,float/price check,2024-12-31,False,
+LNT,LNT,ALLIANT ENERGY CORP,352541,4931,Utilities,mid (2-10B),7.08,62.36,40.7,SEC ticker map,2024-12-31,False,
+NRG,NRG,"NRG ENERGY, INC.",1013871,4911,Utilities,mid (2-10B),3.18,10.1,85.0,SEC ticker map,2024-12-31,False,
+UGI,UGI,UGI CORP /PA/,884614,4932,Utilities,mid (2-10B),5.72,33.25,35.1,SEC ticker map,2024-12-31,False,
+WGL,,WGL HOLDINGS INC,1103601,4924,Utilities,mid (2-10B),3.1,62.2,20.5,float/price check,2018-07-06,True,delisted / acquired (last real trading day)
+WR,WR,WESTAR ENERGY INC /KS,54507,4931,Utilities,mid (2-10B),5.9,41.71,43.1,float/price check,2018-06-04,True,delisted / acquired (last real trading day)
+MCS,MCS,MARCUS CORP,62234,7830,Communication Services,small (0.3-2B),0.34,18.34,1.8,SEC ticker map,2024-12-31,False,
+SBGI,SBGI,SINCLAIR BROADCAST GROUP INC,912752,4833,Communication Services,small (0.3-2B),1.94,30.15,34.4,name match,2024-12-31,False,
+VG,VG,VONAGE HOLDINGS CORP,1272830,4813,Communication Services,small (0.3-2B),1.08,5.07,11.4,float/price check,2022-07-21,True,delisted / acquired (last real trading day)
+BJRI,BJRI,BJS RESTAURANTS INC,1013488,5812,Consumer Discretionary,small (0.3-2B),1.04,41.46,15.4,SEC ticker map,2024-12-31,False,
+BKS,BKS,BARNES & NOBLE INC,890491,5940,Consumer Discretionary,small (0.3-2B),0.63,8.46,12.0,float/price check,2019-08-06,True,delisted / acquired (last real trading day)
+FLXS,FLXS,FLEXSTEEL INDUSTRIES INC,37472,2510,Consumer Discretionary,small (0.3-2B),0.32,42.01,1.6,SEC ticker map,2024-12-31,False,
+LZB,LZB,LA-Z-BOY INC,57131,2510,Consumer Discretionary,small (0.3-2B),1.07,21.49,8.8,SEC ticker map,2024-12-31,False,
+MFRM,,MATTRESS FIRM HOLDING CORP.,1419852,5712,Consumer Discretionary,small (0.3-2B),1.52,41.0,17.7,float/price check,2016-09-16,True,delisted / acquired (last real trading day)
+MGPI,CASK,MGP INGREDIENTS INC,835011,5180,Consumer Discretionary,small (0.3-2B),0.37,22.02,2.6,SEC ticker map,2024-12-31,False,
+MLHR,MLKN,MILLER HERMAN INC,66382,2520,Consumer Discretionary,small (0.3-2B),1.52,25.46,12.5,SEC ticker map,2024-12-31,False,
+NILE,,BLUE NILE INC,1091171,5944,Consumer Discretionary,small (0.3-2B),0.39,34.22,4.0,float/price check,2017-02-17,True,delisted / acquired (last real trading day)
+SAH,SAH,SONIC AUTOMOTIVE INC,1043509,5500,Consumer Discretionary,small (0.3-2B),0.9,18.23,11.9,SEC ticker map,2024-12-31,False,
+SNOW,SNOW,"INTRAWEST RESORTS HOLDINGS, INC.",1587755,7990,Consumer Discretionary,small (0.3-2B),0.38,8.35,2.6,float/price check,2017-07-31,True,delisted / acquired (last real trading day)
+SONC,,SONIC CORP,868611,5812,Consumer Discretionary,small (0.3-2B),1.44,29.58,40.8,float/price check,2018-12-06,True,delisted / acquired (last real trading day)
+WING,WING,WINGSTOP INC.,1636222,5812,Consumer Discretionary,small (0.3-2B),0.68,23.89,4.3,SEC ticker map,2024-12-31,False,
+ZUMZ,ZUMZ,ZUMIEZ INC,1318008,5600,Consumer Discretionary,small (0.3-2B),0.43,16.81,6.7,SEC ticker map,2024-12-31,False,
+MED,MED,MEDIFAST INC,910329,2090,Consumer Staples,small (0.3-2B),0.34,28.93,3.7,SEC ticker map,2024-12-31,False,
+TFM,,"FRESH MARKET, INC.",1489979,5411,Consumer Staples,small (0.3-2B),0.94,19.99,13.6,float/price check,2016-04-27,True,delisted / acquired (last real trading day)
+VSI,VSI,"VITAMIN SHOPPE, INC.",1360530,5400,Consumer Staples,small (0.3-2B),0.78,30.27,14.0,name match,2019-12-16,True,delisted / acquired (last real trading day)
+CPE,,CALLON PETROLEUM CO,928022,1311,Energy,small (0.3-2B),0.42,6.32,15.5,float/price check,2024-03-28,True,delisted / acquired (last real trading day)
+LPI,,"LAREDO PETROLEUM, INC.",1528129,1311,Energy,small (0.3-2B),1.45,6.79,24.3,float/price check,2024-12-31,False,
+BANR,BANR,BANNER CORP,946673,6022,Financials,small (0.3-2B),0.98,41.96,6.4,SEC ticker map,2024-12-31,False,
+CFFN,CFFN,CAPITOL FEDERAL FINANCIAL INC,1490906,6035,Financials,small (0.3-2B),1.63,11.89,9.0,SEC ticker map,2024-12-31,False,
+COBZ,COBZ,COBIZ FINANCIAL INC,1028734,6021,Financials,small (0.3-2B),0.46,11.26,1.6,float/price check,2018-09-28,True,delisted / acquired (last real trading day)
+DLB,DLB,"DOLBY LABORATORIES, INC.",1308547,6794,Financials,small (0.3-2B),1.1,31.59,13.0,SEC ticker map,2024-12-31,False,
+FFBC,FFBC,FIRST FINANCIAL BANCORP /OH/,708955,6021,Financials,small (0.3-2B),1.01,16.37,5.5,SEC ticker map,2024-12-31,False,
+FLIC,,FIRST OF LONG ISLAND CORP,740663,6021,Financials,small (0.3-2B),0.4,28.18,1.0,float/price check,2024-12-31,False,
+BHBK,BHBK,"BLUE HILLS BANCORP, INC.",1601545,6022,Financials,small (0.3-2B),0.39,14.56,1.2,SEC ticker map,2019-03-29,True,delisted / acquired (last real trading day)
+MC,MC,MOELIS & CO,1596967,6282,Financials,small (0.3-2B),0.52,25.04,4.5,SEC ticker map,2024-12-31,False,
+OMAM,AAMI,OM ASSET MANAGEMENT PLC,1611702,6282,Financials,small (0.3-2B),1.43,11.79,3.3,name match,2024-12-31,False,
+PJT,PJT,PJT PARTNERS INC.,1626115,6282,Financials,small (0.3-2B),0.38,24.64,4.3,SEC ticker map,2024-12-31,False,
+RNST,RNST,RENASANT CORP,715072,6022,Financials,small (0.3-2B),1.25,31.12,7.6,SEC ticker map,2024-12-31,False,
+SAFT,SAFT,SAFETY INSURANCE GROUP INC,1172052,6331,Financials,small (0.3-2B),0.83,54.88,4.5,SEC ticker map,2024-12-31,False,
+SASR,,SANDY SPRING BANCORP INC,824410,6021,Financials,small (0.3-2B),0.62,25.98,2.4,float/price check,2024-12-31,False,
+TPRE,SPNT,THIRD POINT REINSURANCE LTD.,1576018,6331,Financials,small (0.3-2B),1.22,11.6,4.1,SEC ticker map,2024-12-31,False,
+VIRT,VIRT,"VIRTU FINANCIAL, INC.",1592386,6211,Financials,small (0.3-2B),0.74,22.46,6.0,SEC ticker map,2024-12-31,False,
+WIBC,,WILSHIRE BANCORP INC,1285224,6022,Financials,small (0.3-2B),0.82,10.49,6.7,float/price check,2016-07-29,True,delisted / acquired (last real trading day)
+ACET,,ACETO CORP,2034,5122,Health Care,small (0.3-2B),0.68,22.85,5.8,float/price check,2019-04-02,True,Aceto bankrupt 2019; ticker later reused by Adicet Bio (533-day gap) -> cut
+ATRC,ATRC,"ATRICURE, INC.",1323885,3841,Health Care,small (0.3-2B),0.6,18.62,3.8,SEC ticker map,2024-12-31,False,
+CERS,CERS,CERUS CORP,1020214,3841,Health Care,small (0.3-2B),0.54,5.52,7.5,SEC ticker map,2024-12-31,False,
+DVAX,,DYNAVAX TECHNOLOGIES CORP,1029142,2834,Health Care,small (0.3-2B),0.89,23.16,30.9,float/price check,2024-12-31,False,
+KTWO,KTWO,"K2M GROUP HOLDINGS, INC.",1499807,3841,Health Care,small (0.3-2B),0.6,14.53,3.4,float/price check,2018-11-08,True,delisted / acquired (last real trading day)
+NEOG,NEOG,NEOGEN CORP,711377,2835,Health Care,small (0.3-2B),1.96,52.2,10.2,SEC ticker map,2024-12-31,False,Alpaca asof link breaks on 2022-09-08; same company continues under plain ticker
+NUS,NUS,NU SKIN ENTERPRISES INC,1021561,5122,Health Care,small (0.3-2B),1.78,31.84,36.7,SEC ticker map,2024-12-31,False,
+NXTM,NXTM,"NXSTAGE MEDICAL, INC.",1333170,3845,Health Care,small (0.3-2B),1.26,19.63,11.4,float/price check,2019-02-21,True,delisted / acquired (last real trading day)
+PBYI,PBYI,"PUMA BIOTECHNOLOGY, INC.",1401667,2834,Health Care,small (0.3-2B),1.55,47.8,47.8,SEC ticker map,2024-12-31,False,
+RGLS,,REGULUS THERAPEUTICS INC.,1505512,2834,Health Care,small (0.3-2B),0.34,6.43,3.0,float/price check,2024-12-31,False,
+RGNX,RGNX,REGENXBIO INC.,1590877,2836,Health Care,small (0.3-2B),0.35,13.39,1.3,SEC ticker map,2024-12-31,False,
+RMTI,RMTI,"ROCKWELL MEDICAL, INC.",1041024,3845,Health Care,small (0.3-2B),0.38,7.41,5.0,SEC ticker map,2024-12-31,False,
+VSAR,,"VERSARTIS, INC.",1513818,2834,Health Care,small (0.3-2B),0.33,11.24,1.8,float/price check,2024-01-26,True,delisted / acquired (last real trading day)
+XENT,XENT,"INTERSECT ENT, INC.",1271214,3841,Health Care,small (0.3-2B),0.53,18.78,4.9,name match,2022-05-12,True,delisted / acquired (last real trading day)
+ANGI,ANGI,"ANGIE'S LIST, INC.",1491778,7310,Industrials,small (0.3-2B),0.5,8.59,5.5,float/price check,2024-12-31,False,
+ARII,,"AMERICAN RAILCAR INDUSTRIES, INC.",1344596,3743,Industrials,small (0.3-2B),0.82,41.19,7.7,float/price check,2018-12-04,True,delisted / acquired (last real trading day)
+AVAV,AVAV,AEROVIRONMENT INC,1368622,3721,Industrials,small (0.3-2B),0.61,26.0,5.2,SEC ticker map,2024-12-31,False,
+CALM,CALM,CAL-MAINE FOODS INC,16160,200,Industrials,small (0.3-2B),1.7,47.65,38.9,SEC ticker map,2024-12-31,False,
+GVA,GVA,GRANITE CONSTRUCTION INC,861459,1600,Industrials,small (0.3-2B),1.52,38.62,14.5,SEC ticker map,2024-12-31,False,
+HA,,HAWAIIAN HOLDINGS INC,1172222,4512,Industrials,small (0.3-2B),1.71,32.03,49.4,float/price check,2024-09-17,True,delisted / acquired (last real trading day)
+KMT,KMT,KENNAMETAL INC,55242,3541,Industrials,small (0.3-2B),1.35,16.89,31.5,SEC ticker map,2024-12-31,False,
+MTRN,MTRN,MATERION CORP,1104657,3460,Industrials,small (0.3-2B),0.46,23.12,2.7,SEC ticker map,2024-12-31,False,
+NPK,NPK,NATIONAL PRESTO INDUSTRIES INC,80172,3480,Industrials,small (0.3-2B),0.53,76.57,2.8,SEC ticker map,2024-12-31,False,
+PGTI,,"PGT, INC.",1354327,3442,Industrials,small (0.3-2B),0.47,9.67,3.2,float/price check,2024-03-27,True,delisted / acquired (last real trading day)
+PKOH,PKOH,PARK OHIO HOLDINGS CORP,76282,3460,Industrials,small (0.3-2B),0.35,27.99,1.6,SEC ticker map,2024-12-31,False,
+PLOW,PLOW,"DOUGLAS DYNAMICS, INC",1287213,3531,Industrials,small (0.3-2B),0.41,18.36,2.9,SEC ticker map,2024-12-31,False,
+QUOT,,QUOTIENT TECHNOLOGY INC.,1115128,7310,Industrials,small (0.3-2B),0.46,5.59,2.5,float/price check,2023-09-01,True,delisted / acquired (last real trading day)
+RUN,RUN,SUNRUN INC.,1469367,3430,Industrials,small (0.3-2B),0.89,8.79,7.1,SEC ticker map,2024-12-31,False,
+SKYW,SKYW,SKYWEST INC,793733,4512,Industrials,small (0.3-2B),0.75,14.86,10.9,SEC ticker map,2024-12-31,False,
+TAL,,"TAL INTERNATIONAL GROUP, INC.",1331745,7359,Industrials,small (0.3-2B),0.38,11.28,6.4,name match,2016-06-15,True,delisted / acquired (last real trading day)
+VECO,VECO,VEECO INSTRUMENTS INC,103145,3559,Industrials,small (0.3-2B),0.71,17.77,6.3,SEC ticker map,2024-12-31,False,
+VRA,VRA,"VERA BRADLEY, INC.",1495320,3100,Industrials,small (0.3-2B),0.49,14.14,6.8,SEC ticker map,2024-12-31,False,
+WSTC,,WEST CORP,1024657,7389,Industrials,small (0.3-2B),1.55,18.54,5.6,float/price check,2017-10-10,True,delisted / acquired (last real trading day)
+ATEN,ATEN,"A10 NETWORKS, INC.",1580808,3576,Information Technology,small (0.3-2B),0.38,5.97,1.7,SEC ticker map,2024-12-31,False,
+BOX,BOX,BOX INC,1372612,7372,Information Technology,small (0.3-2B),0.99,10.62,12.2,SEC ticker map,2024-12-31,False,
+CEVA,CEVA,CEVA INC,1173489,3674,Information Technology,small (0.3-2B),0.46,22.37,3.0,SEC ticker map,2024-12-31,False,
+COHU,COHU,COHU INC,21535,3825,Information Technology,small (0.3-2B),0.3,11.51,1.1,SEC ticker map,2024-12-31,False,
+CUB,CUB,CUBIC CORP /DE/,26076,3829,Information Technology,small (0.3-2B),1.14,42.18,8.4,float/price check,2021-05-24,True,delisted / acquired (last real trading day)
+EPIQ,,EPIQ SYSTEMS INC,1027207,7371,Information Technology,small (0.3-2B),0.44,11.81,1.5,float/price check,2016-09-30,True,delisted / acquired (last real trading day)
+IMPV,IMPV,IMPERVA INC,1364962,7372,Information Technology,small (0.3-2B),1.8,57.4,29.3,float/price check,2019-01-09,True,Alpaca asof link breaks on 2016-12-12; same company continues under plain ticker
+ININ,,"INTERACTIVE INTELLIGENCE GROUP, INC.",1517650,7372,Information Technology,small (0.3-2B),0.51,23.48,4.2,float/price check,2016-12-01,True,delisted / acquired (last real trading day)
+IRBT,,IROBOT CORP,1159167,3630,Information Technology,small (0.3-2B),0.94,32.19,12.4,float/price check,2024-12-31,False,
+MKSI,MKSI,MKS INSTRUMENTS INC,1049502,3823,Information Technology,small (0.3-2B),1.81,33.95,11.8,SEC ticker map,2024-12-31,False,
+PCTY,PCTY,PAYLOCITY HOLDING CORP,1591698,7372,Information Technology,small (0.3-2B),1.72,33.7,13.7,SEC ticker map,2024-12-31,False,
+QSII,,"QUALITY SYSTEMS, INC",708818,7373,Information Technology,small (0.3-2B),1.02,16.82,11.7,float/price check,2023-11-09,True,delisted / acquired (last real trading day)
+TWOU,,"2U, INC.",1459417,7372,Information Technology,small (0.3-2B),0.98,21.26,12.3,float/price check,2024-08-06,True,delisted / acquired (last real trading day)
+VRTU,VRTU,VIRTUSA CORP,1207074,7371,Information Technology,small (0.3-2B),1.27,42.48,11.1,name match,2021-02-10,True,delisted / acquired (last real trading day)
+WEB,WEB,"WEB.COM GROUP, INC.",1095291,7372,Information Technology,small (0.3-2B),0.95,18.6,6.9,float/price check,2018-10-10,True,delisted / acquired (last real trading day)
+CBPX,CBPX,"CONTINENTAL BUILDING PRODUCTS, INC.",1592480,3270,Materials,small (0.3-2B),0.62,14.74,5.2,name match,2020-01-31,True,delisted / acquired (last real trading day)
+CSWI,CSW,"CSW INDUSTRIALS, INC.",1624794,2891,Materials,small (0.3-2B),0.53,34.08,2.2,SEC ticker map,2024-12-31,False,
+FTK,FTK,FLOTEK INDUSTRIES INC/CN/,928054,2890,Materials,small (0.3-2B),0.39,7.33,9.6,SEC ticker map,2024-12-31,False,
+GPRE,GPRE,GREEN PLAINS INC.,1309402,2860,Materials,small (0.3-2B),0.68,17.59,13.5,SEC ticker map,2024-12-31,False,
+ROG,ROG,ROGERS CORP,84748,2821,Materials,small (0.3-2B),0.8,44.26,8.6,SEC ticker map,2024-12-31,False,
+AHT,AHT,ASHFORD HOSPITALITY TRUST INC,1232582,6798,Real Estate,small (0.3-2B),0.51,5.34,5.9,SEC ticker map,2024-12-31,False,
+BFS,BFS,SAUL CENTERS INC,907254,6798,Real Estate,small (0.3-2B),1.05,49.5,2.2,SEC ticker map,2024-12-31,False,
+DEA,DEA,"EASTERLY GOVERNMENT PROPERTIES, INC.",1622194,6798,Real Estate,small (0.3-2B),0.41,17.15,1.3,SEC ticker map,2024-12-31,False,
+DOC,,PHYSICIANS REALTY TRUST,1574540,6798,Real Estate,small (0.3-2B),1.45,16.58,13.6,float/price check,2024-02-29,True,ticker reused by Healthpeak after the 2024 merger: stop at 2024-02-29
+GOOD,GOOD,GLADSTONE COMMERCIAL CORP,1234006,6519,Real Estate,small (0.3-2B),0.31,13.85,1.9,SEC ticker map,2024-12-31,False,
+MTGE,MTGE,AMERICAN CAPITAL MORTGAGE INVESTMENT CORP.,1516973,6798,Real Estate,small (0.3-2B),0.62,13.03,7.3,float/price check,2018-09-06,True,delisted / acquired (last real trading day)
+RSO,ACR,RESOURCE CAPITAL CORP.,1332551,6798,Real Estate,small (0.3-2B),0.33,10.42,3.4,SEC ticker map,2024-12-31,False,
+STAG,STAG,"STAG INDUSTRIAL, INC.",1479094,6798,Real Estate,small (0.3-2B),1.35,17.1,11.1,SEC ticker map,2024-12-31,False,
+ENBL,ENBL,"ENABLE MIDSTREAM PARTNERS, LP",1591763,4922,Utilities,small (0.3-2B),1.6,7.47,2.9,name match,2021-12-02,True,delisted / acquired (last real trading day)
+ORA,ORA,"ORMAT TECHNOLOGIES, INC.",1296445,4911,Utilities,small (0.3-2B),1.69,34.56,5.8,SEC ticker map,2024-12-31,False,
