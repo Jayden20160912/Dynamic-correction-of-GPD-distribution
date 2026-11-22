@@ -57,7 +57,7 @@ HISTORY_BARS = 320      # daily bars needed per stock (echo_q looks back 255 ret
 # Trade only when the relative weights v move enough. Distance between two days' weights:
 #     TV(v_today, v_ref) = 0.5 * sum_i |v_today,i - v_ref,i|      (0 = identical, 1 = no overlap)
 # Otherwise the current holdings are kept unchanged (no orders that day).
-REBALANCE_TV_THRESHOLD = 0.05          # 0 = rebalance every day
+REBALANCE_TV_THRESHOLD = 0.075         # 0 = rebalance every day
 REBALANCE_REFERENCE = "previous_day"   # "previous_day":   compare with yesterday's v
                                        # "last_rebalance": compare with v of the last actual rebalance
                                        #                   (catches slow drift that never jumps in one day)
