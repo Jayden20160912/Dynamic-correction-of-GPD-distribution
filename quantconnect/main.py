@@ -12,9 +12,10 @@ How to run
   1. Locally:  python export_model_for_qc.py --artifacts ../artifacts
      -> writes gpd_mixture_model.json (weights + preprocessing statistics in one file;
         gpd_model.pt and preprocess.json are not needed on QuantConnect)
-  2. Commit and push gpd_mixture_model.json to GitHub (public repository).
+  2. Commit and push gpd_mixture_model.json and qc_sec_factors.csv to GitHub (public repository).
   3. New Python project on QuantConnect, paste this file as main.py, edit the CONFIG section,
-     run a backtest. The model is downloaded from MODEL_URL with self.download().
+     run a backtest. The model (MODEL_URL) and the SEC factors (SEC_FACTORS_URL) are downloaded
+     from GitHub with self.download().
 
 The network forward pass is written in numpy (no torch needed on QuantConnect);
 export_model_for_qc.py checks that it matches the PyTorch model exactly.
@@ -23,6 +24,8 @@ export_model_for_qc.py checks that it matches the PyTorch model exactly.
 from AlgorithmImports import *
 
 import json
+from io import StringIO
+
 import numpy as np
 import pandas as pd
 
@@ -30,18 +33,26 @@ import pandas as pd
 # =============================================================================
 # CONFIG
 # =============================================================================
-TICKERS = ["AAPL", "MSFT", "AMZN", "GOOGL", "META", "NVDA", "JPM", "JNJ", "XOM", "PG"]
+# The 30 stocks covered by qc_sec_factors.csv
+TICKERS = ["AAPL", "JPM", "XOM", "MRK", "PG", "DIS", "UNH", "NKE", "BA", "LULU",
+           "ETSY", "CROX", "DAR", "CAKE", "ALB", "MTN", "POOL", "MOS", "ENPH", "BBWI",
+           "SMP", "TILE", "HCSG", "ARLO", "PRDO", "MLKN", "LZB", "WGO", "HELE", "OI"]
 # The model was trained on 2016-01-01 .. 2024-12-31 (data after 2023-03-30 was used for model
 # selection), so 2025-01-01 onwards is genuinely out of sample.
 START_DATE = (2025, 1, 1)
 END_DATE = (2026, 10, 30)
 CASH = 1_000_000
 
-# The exported model (written by export_model_for_qc.py), downloaded from GitHub at start-up.
-# Must be the "raw" link of a PUBLIC repository. To pin an exact model version, replace
-# "main" with a commit hash.
-MODEL_URL = ("https://raw.githubusercontent.com/Jayden20160912/Dynamic-correction-of-GPD-distribution/"
-             "main/quantconnect/gpd_mixture_model.json")
+# Files downloaded from GitHub at start-up ("raw" links of a PUBLIC repository).
+# GITHUB_BRANCH is the branch the files are read from; a commit hash pins an exact version.
+GITHUB_RAW = "https://raw.githubusercontent.com/Jayden20160912/Dynamic-correction-of-GPD-distribution"
+GITHUB_BRANCH = "Neural-Networks,-Loss-Function,-and-Model-Training-Algorithm"
+# exported model (written by export_model_for_qc.py)
+MODEL_URL = f"{GITHUB_RAW}/{GITHUB_BRANCH}/quantconnect/gpd_mixture_model.json"
+# SEC factors per stock and calendar day: columns date, ticker, n_8k_30d, filing_change
+# (value on date d = what was known at the close of d). Stocks / dates not in the file fall back
+# to the training median.
+SEC_FACTORS_URL = f"{GITHUB_RAW}/{GITHUB_BRANCH}/qc_sec_factors.csv"
 
 MODE = "gpd"            # "gpd" = this strategy; "equal" / "inverse_vol" = benchmarks on the same stocks
 D_LOSS = 0.07           # disaster loss threshold d
@@ -74,8 +85,35 @@ REBALANCE_REFERENCE = "previous_day"   # "previous_day":   compare with yesterda
 #   add_history_features() in features.py -> simple close-to-close returns (the training target Y)
 #
 # n_8k_30d and filing_change come from SEC EDGAR in training (8-K count, 10-K/10-Q text change).
-# That data is not wired into QuantConnect, so they are NaN here and the preprocessing replaces
-# them with the training median (1.0 and 0.068): the model runs without those two signals.
+# QuantConnect has no SEC filings, so they are read from qc_sec_factors.csv (SEC_FACTORS_URL).
+# Stocks or dates not covered by the file are NaN, which the preprocessing replaces with the
+# training median (1.0 and 0.068).
+SEC_COLS = ["n_8k_30d", "filing_change"]
+
+
+def load_sec_factors(csv_text):
+    """CSV text (date, ticker, n_8k_30d, filing_change) -> {ticker: DataFrame indexed by date}."""
+    df = pd.read_csv(StringIO(csv_text))
+    missing = [c for c in ["date", "ticker"] + SEC_COLS if c not in df.columns]
+    if missing:
+        raise ValueError(f"SEC factor file is missing columns {missing}; found {list(df.columns)}")
+    df["date"] = pd.to_datetime(df["date"]).dt.normalize()
+    df["ticker"] = df["ticker"].astype(str).str.upper().str.strip()
+    return {t: g.set_index("date")[SEC_COLS].sort_index() for t, g in df.groupby("ticker")}
+
+
+def align_sec(sec, index):
+    """SEC factors of one stock on each bar date in `index`: the latest row dated on or before that
+    day (no look-ahead). Days before the first or after the last row of the file -> NaN."""
+    out = pd.DataFrame(np.nan, index=index, columns=SEC_COLS)
+    if sec is None or sec.empty:
+        return out
+    days = pd.DatetimeIndex(index).normalize()
+    inside = (days >= sec.index[0]) & (days <= sec.index[-1])
+    for col in SEC_COLS:
+        vals = align_asof(sec[col], days).to_numpy()
+        out[col] = np.where(inside, vals, np.nan)
+    return out
 
 def echo_window_max(abs_r, lag):
     """max |r_tau| for tau in [t+1-lag-3, t+1-lag+3], i.e. k = lag-3 .. lag+3 trading days before
@@ -84,10 +122,11 @@ def echo_window_max(abs_r, lag):
     return abs_r.rolling(7, min_periods=1).max().shift(lag - 4)
 
 
-def compute_factor_panel(bars, vix=None):
+def compute_factor_panel(bars, vix=None, sec=None):
     """Daily bars of ONE stock (index = time; open, high, low, close, volume) -> factors per day.
 
     vix: optional Series of VIX closes indexed by time (aligned as-of to the stock's dates).
+    sec: optional DataFrame of this stock's SEC factors indexed by date (from load_sec_factors).
     Returns a DataFrame with one row per day and one column per factor.
     """
     bars = bars.sort_index()
@@ -106,9 +145,10 @@ def compute_factor_panel(bars, vix=None):
     f["abn_volume"] = np.log((volume.rolling(5).mean() + 1) / (volume.rolling(60).mean() + 1))
     # ---- market factor: FRED VIXCLS in training, forward-filled over holidays ----
     f["vix"] = align_asof(vix, f.index) if vix is not None else np.nan
-    # ---- SEC factors: not available here -> NaN -> training median ----
-    f["n_8k_30d"] = np.nan
-    f["filing_change"] = np.nan
+    # ---- SEC factors: from qc_sec_factors.csv (NaN where not covered -> training median) ----
+    sec_vals = align_sec(sec, f.index)
+    f["n_8k_30d"] = sec_vals["n_8k_30d"].to_numpy()
+    f["filing_change"] = sec_vals["filing_change"].to_numpy()
     # ---- history factors: features.add_history_features ----
     f["worst252"] = (-simple_r).rolling(252, min_periods=60).max()
     windows = pd.concat([echo_window_max(simple_r.abs(), L) for L in (63, 126, 189, 252)], axis=1)
@@ -239,8 +279,15 @@ def total_variation(a, b):
 # 4. HISTORY HELPERS  (QuantConnect history DataFrame -> factor matrix)
 # =============================================================================
 
-def factor_panel_from_history(hist, symbols, vix):
-    """QuantConnect daily history (MultiIndex symbol, time) -> {symbol: factor DataFrame}."""
+def ticker_of(sym):
+    """Ticker string of a QuantConnect Symbol (or of a plain string)."""
+    return str(getattr(sym, "value", sym)).upper()
+
+
+def factor_panel_from_history(hist, symbols, vix, sec=None):
+    """QuantConnect daily history (MultiIndex symbol, time) -> {symbol: factor DataFrame}.
+    sec: {ticker: SEC factor DataFrame} from load_sec_factors, or None."""
+    sec = sec or {}
     panels = {}
     for sym in symbols:
         try:
@@ -249,7 +296,7 @@ def factor_panel_from_history(hist, symbols, vix):
             continue
         bars = bars[["open", "high", "low", "close", "volume"]].dropna(subset=["close"])
         if len(bars) >= 2:
-            panels[sym] = compute_factor_panel(bars, vix)
+            panels[sym] = compute_factor_panel(bars, vix, sec.get(ticker_of(sym)))
     return panels
 
 
@@ -307,6 +354,8 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         if missing:
             self.log(f"WARNING: factors not computed by this algorithm (left NaN -> training median): {missing}")
 
+        self.sec = self.download_sec_factors()      # needed before calibrate_r_target()
+
         self.r_target = R_TARGET if R_TARGET is not None else self.calibrate_r_target()
         self.log(f"R_target = {self.r_target:.6g}")
         self.checked_distribution = False
@@ -336,6 +385,22 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         self.log(f"model downloaded from {MODEL_URL} ({len(text) / 1e3:.0f} KB)")
         return model_json
 
+    def download_sec_factors(self):
+        """Download qc_sec_factors.csv from SEC_FACTORS_URL -> {ticker: DataFrame indexed by date}."""
+        text = self.download(SEC_FACTORS_URL)
+        if not text or not text.lstrip().lower().startswith("date"):
+            raise ValueError(f"could not download the SEC factors from {SEC_FACTORS_URL} "
+                             f"(got: {str(text)[:80]!r}). Check that the file is pushed to "
+                             f"GITHUB_BRANCH and that the repository is public.")
+        sec = load_sec_factors(text)
+        first = min(d.index[0] for d in sec.values()).date()
+        last = max(d.index[-1] for d in sec.values()).date()
+        self.log(f"SEC factors downloaded: {len(sec)} tickers, {first} to {last}")
+        uncovered = [t for t in TICKERS if t.upper() not in sec]
+        if uncovered:
+            self.log(f"WARNING: no SEC factors for {uncovered} -> training median is used for them")
+        return sec
+
     # ---------------------------------------------------------------- data
     def vix_series(self, bars):
         try:
@@ -348,7 +413,7 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         hist = self.history(self.symbols, bars, Resolution.DAILY)
         if hist is None or len(hist) == 0:
             return {}
-        return factor_panel_from_history(hist, self.symbols, self.vix_series(bars))
+        return factor_panel_from_history(hist, self.symbols, self.vix_series(bars), self.sec)
 
     # ---------------------------------------------------------------- calibration
     def calibrate_r_target(self):
