@@ -49,28 +49,24 @@ HISTORY_BARS = 320      # daily bars needed per stock (echo_q looks back 255 ret
 
 
 # =============================================================================
-# 1. FACTORS  (must match the definitions used in training -- see notes below)
+# 1. FACTORS  (same definitions as features.py in the training repository)
 # =============================================================================
-# r_tau = simple close-to-close return realised on day tau; t = the factor date.
+# t = the factor date; every factor only uses bars up to and including the close of day t.
+# Prices are split- and dividend-adjusted, like the Alpaca bars used in training
+# (adjustment="all"), which matches QuantConnect's default adjusted data.
 #
-# The three history factors follow the model diagram exactly:
-#   worst252 = max over the last 252 days of (-r_tau)
-#   e63      = max |r_tau| for tau in t+1-66 ... t+1-60
-#   echo_q   = mean of the same 7-day window max at 63, 126, 189, 252 trading days back
+#   price_factors() in features.py      -> log returns for the three return-distribution factors
+#   add_history_features() in features.py -> simple close-to-close returns (the training target Y)
 #
-# The other factors use standard definitions whose SCALE was checked against the training
-# mean / std stored in preprocess.json (annualised volatilities, log abnormal volume, excess
-# kurtosis). Exact windows and formulas should still be confirmed with the training code
-# (features.py), because the model standardises every factor with the TRAINING mean and std.
-# The algorithm logs a warning on the first rebalance if a factor's live values are far from
-# the training distribution.
-#
-# n_8k_30d and filing_change need SEC filing data, which is not wired in yet. They are
-# left as NaN, and the preprocessing replaces NaN with the training median.
+# n_8k_30d and filing_change come from SEC EDGAR in training (8-K count, 10-K/10-Q text change).
+# That data is not wired into QuantConnect, so they are NaN here and the preprocessing replaces
+# them with the training median (1.0 and 0.068): the model runs without those two signals.
 
 def echo_window_max(abs_r, lag):
-    """max |r_tau| for tau in [t+1-lag-3, t+1-lag+3]  (a 7-day window centred lag-1 days back)."""
-    return abs_r.rolling(7).max().shift(lag - 4)
+    """max |r_tau| for tau in [t+1-lag-3, t+1-lag+3], i.e. k = lag-3 .. lag+3 trading days before
+    the loss day t+1 (features.py window_max). Like pandas' row-wise max there, missing days are
+    skipped: the window is NaN only if all 7 days are missing."""
+    return abs_r.rolling(7, min_periods=1).max().shift(lag - 4)
 
 
 def compute_factor_panel(bars, vix=None):
@@ -81,29 +77,28 @@ def compute_factor_panel(bars, vix=None):
     """
     bars = bars.sort_index()
     close, high, low, volume = bars["close"], bars["high"], bars["low"], bars["volume"]
-    r = close.pct_change()
-    abs_r = r.abs()
+    log_r = np.log(close).diff()            # features.py price_factors: r = log(c).diff()
+    simple_r = close.pct_change()           # features.py history features: Y = c(t+1)/c(t) - 1
 
     f = pd.DataFrame(index=bars.index)
-    # ---- ten original factors ----
-    # Scales checked against the training statistics in preprocess.json (feature_mean / feature_std):
-    #   vol_20d 0.34 and downside_vol_20d 0.24 -> annualised; abn_volume mean -0.06 -> log ratio.
-    # TODO: still confirm exact windows / formulas with features.py.
-    f["vol_20d"] = r.rolling(20).std() * np.sqrt(252)
-    f["downside_vol_20d"] = np.sqrt((r.clip(upper=0.0) ** 2).rolling(20).mean() * 252)
-    f["kurtosis_60d"] = r.rolling(60).kurt()                       # excess kurtosis (normal = 0)
-    f["momentum_60d"] = close / close.shift(60) - 1.0
-    f["reversal_5d"] = close / close.shift(5) - 1.0
+    # ---- price factors: features.price_factors ----
+    f["vol_20d"] = log_r.rolling(20).std() * np.sqrt(252)
+    f["downside_vol_20d"] = np.sqrt((log_r.clip(upper=0) ** 2).rolling(20).mean()) * np.sqrt(252)
+    f["kurtosis_60d"] = log_r.rolling(60).kurt()                    # excess kurtosis
+    f["momentum_60d"] = close / close.shift(60) - 1
+    f["reversal_5d"] = close / close.shift(5) - 1
     f["range_5d"] = ((high - low) / close).rolling(5).mean()
-    f["abn_volume"] = np.log(volume / volume.rolling(20).mean().shift(1))  # vs previous 20-day average
+    f["abn_volume"] = np.log((volume.rolling(5).mean() + 1) / (volume.rolling(60).mean() + 1))
+    # ---- market factor: FRED VIXCLS in training, forward-filled over holidays ----
     f["vix"] = align_asof(vix, f.index) if vix is not None else np.nan
-    f["n_8k_30d"] = np.nan          # TODO: SEC 8-K filings in the last 30 days
-    f["filing_change"] = np.nan     # TODO: SEC filing feature
-    # ---- three history factors (definitions from the model diagram) ----
-    f["worst252"] = (-r).rolling(252).max()
-    f["e63"] = echo_window_max(abs_r, 63)
-    f["echo_q"] = pd.concat([echo_window_max(abs_r, L) for L in (63, 126, 189, 252)],
-                            axis=1).mean(axis=1, skipna=False)
+    # ---- SEC factors: not available here -> NaN -> training median ----
+    f["n_8k_30d"] = np.nan
+    f["filing_change"] = np.nan
+    # ---- history factors: features.add_history_features ----
+    f["worst252"] = (-simple_r).rolling(252, min_periods=60).max()
+    windows = pd.concat([echo_window_max(simple_r.abs(), L) for L in (63, 126, 189, 252)], axis=1)
+    f["e63"] = windows.iloc[:, 0]
+    f["echo_q"] = windows.mean(axis=1)      # mean of the windows that exist so far (skips NaN)
     return f
 
 
