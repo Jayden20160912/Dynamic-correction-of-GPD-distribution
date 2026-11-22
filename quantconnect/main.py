@@ -53,6 +53,15 @@ TARGET_QUANTILE = 0.5   # R_target = this quantile of the full-investment risk B
 REBALANCE_MINUTES_AFTER_OPEN = 30
 HISTORY_BARS = 320      # daily bars needed per stock (echo_q looks back 255 returns)
 
+# ---- turnover control ----
+# Trade only when the relative weights v move enough. Distance between two days' weights:
+#     TV(v_today, v_ref) = 0.5 * sum_i |v_today,i - v_ref,i|      (0 = identical, 1 = no overlap)
+# Otherwise the current holdings are kept unchanged (no orders that day).
+REBALANCE_TV_THRESHOLD = 0.05          # 0 = rebalance every day
+REBALANCE_REFERENCE = "previous_day"   # "previous_day":   compare with yesterday's v
+                                       # "last_rebalance": compare with v of the last actual rebalance
+                                       #                   (catches slow drift that never jumps in one day)
+
 
 # =============================================================================
 # 1. FACTORS  (same definitions as features.py in the training repository)
@@ -219,6 +228,13 @@ def allocate_from_risk(R, R_target, gamma=1.0, delta=1e-6):
     return weights, 1.0 - weights.sum(), v, B, c
 
 
+def total_variation(a, b):
+    """Total variation distance 0.5 * sum_i |a_i - b_i| between two weight vectors given as
+    Series indexed by symbol. Symbols missing from one side count as weight 0."""
+    a, b = a.align(b, fill_value=0.0)
+    return 0.5 * float(np.abs(a.to_numpy() - b.to_numpy()).sum())
+
+
 # =============================================================================
 # 4. HISTORY HELPERS  (QuantConnect history DataFrame -> factor matrix)
 # =============================================================================
@@ -294,6 +310,13 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         self.r_target = R_TARGET if R_TARGET is not None else self.calibrate_r_target()
         self.log(f"R_target = {self.r_target:.6g}")
         self.checked_distribution = False
+
+        if REBALANCE_REFERENCE not in ("previous_day", "last_rebalance"):
+            raise ValueError(f"unknown REBALANCE_REFERENCE {REBALANCE_REFERENCE}")
+        self.prev_v = None            # yesterday's relative weights (Series indexed by symbol)
+        self.last_rebalance_v = None  # relative weights at the last actual rebalance
+        self.n_days = 0
+        self.n_rebalances = 0
 
         self.schedule.on(self.date_rules.every_day(self.spy),
                          self.time_rules.after_market_open(self.spy, REBALANCE_MINUTES_AFTER_OPEN),
@@ -380,16 +403,37 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
             self.plot("GPD Heavy Share", "heavy share of R", float(np.mean(R_heavy / R)))
         elif MODE == "equal":
             weights = np.full(len(syms), 1.0 / len(syms))
+            v = weights
         elif MODE == "inverse_vol":
             vol = X[:, self.model.feature_names.index("vol_20d")]
             inv = np.where(np.isfinite(vol) & (vol > 0), 1.0 / vol, np.nan)
             inv = np.where(np.isnan(inv), np.nanmedian(inv), inv)
             weights = inv / inv.sum()
+            v = weights
         else:
             raise ValueError(f"unknown MODE {MODE}")
 
+        # ---- turnover control: trade only if v moved enough (see REBALANCE_TV_THRESHOLD) ----
+        v_today = pd.Series(np.asarray(v, dtype=float), index=syms)
+        ref = self.prev_v if REBALANCE_REFERENCE == "previous_day" else self.last_rebalance_v
+        self.prev_v = v_today
+        self.n_days += 1
+        if ref is not None and set(ref.index) == set(syms):
+            tv = total_variation(v_today, ref)
+            self.plot("GPD Rebalance", "TV distance of v", tv)
+            self.plot("GPD Rebalance", "threshold", REBALANCE_TV_THRESHOLD)
+            if tv <= REBALANCE_TV_THRESHOLD:
+                return                      # keep current holdings, no orders today
+        # first day, a stock entered / left, or v moved more than the threshold -> rebalance
+
         targets = [PortfolioTarget(s, float(w)) for s, w in zip(syms, weights)]
         self.set_holdings(targets, liquidate_existing_holdings=True)
+        self.last_rebalance_v = v_today
+        self.n_rebalances += 1
+
+    def on_end_of_algorithm(self):
+        self.log(f"rebalanced on {self.n_rebalances} of {self.n_days} trading days "
+                 f"(TV threshold {REBALANCE_TV_THRESHOLD}, reference = {REBALANCE_REFERENCE})")
 
     def check_factor_distribution(self, X):
         """Warn if live factors look very different from the training distribution
