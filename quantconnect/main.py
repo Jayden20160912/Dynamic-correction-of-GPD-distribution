@@ -73,6 +73,9 @@ REBALANCE_REFERENCE = "previous_day"   # "previous_day":   compare with yesterda
                                        # "last_rebalance": compare with v of the last actual rebalance
                                        #                   (catches slow drift that never jumps in one day)
 
+# ---- comparison chart (strategy vs. 30-stock average vs. S&P 500) ----
+COMPARISON_CHART = "Strategy vs Benchmarks"   # must not be a reserved chart name
+
 
 # =============================================================================
 # 1. FACTORS  (same definitions as features.py in the training repository)
@@ -371,6 +374,12 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
                          self.time_rules.after_market_open(self.spy, REBALANCE_MINUTES_AFTER_OPEN),
                          self.rebalance)
 
+        # ---- comparison chart: strategy vs. equal-weight 30 stocks vs. S&P 500 ----
+        self.start_prices = {}        # first price seen for each stock / SPY (sets the scale to CASH)
+        self.schedule.on(self.date_rules.every_day(self.spy),
+                         self.time_rules.before_market_close(self.spy, 1),
+                         self.plot_comparison)
+
     # ---------------------------------------------------------------- model
     def download_model_json(self):
         """Download the exported model from MODEL_URL and check that it is the right file."""
@@ -495,6 +504,31 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         self.set_holdings(targets, liquidate_existing_holdings=True)
         self.last_rebalance_v = v_today
         self.n_rebalances += 1
+
+    # ---------------------------------------------------------------- comparison chart
+    def plot_comparison(self):
+        """Plot, once a day just before the close, three lines that all start at CASH:
+           - the strategy's portfolio value;
+           - the 30 stocks' average price, each price divided by its own first price
+             (= an equal-weight buy-and-hold of the 30 stocks);
+           - SPY, the S&P 500 ETF.
+        A plain average of raw prices is not used: it would be dominated by high-priced
+        stocks (e.g. a $500 stock would count 50x more than a $10 stock)."""
+        if self.is_warming_up:
+            return
+        rel = []
+        for s in self.symbols:
+            px = self.securities[s].price
+            if px > 0:
+                p0 = self.start_prices.setdefault(s, px)
+                rel.append(px / p0)
+        spy_px = self.securities[self.spy].price
+        if not rel or spy_px <= 0:
+            return
+        spy0 = self.start_prices.setdefault(self.spy, spy_px)
+        self.plot(COMPARISON_CHART, "GPD strategy", self.portfolio.total_portfolio_value)
+        self.plot(COMPARISON_CHART, "30 stocks average (equal weight)", CASH * float(np.mean(rel)))
+        self.plot(COMPARISON_CHART, "S&P 500 (SPY)", CASH * spy_px / spy0)
 
     def on_end_of_algorithm(self):
         self.log(f"rebalanced on {self.n_rebalances} of {self.n_days} trading days "
