@@ -18,8 +18,15 @@ Part 2 -- all validation exceedances (the real test)
         many more small S than expected -> real crashes are worse than predicted -> tail TOO THIN
         many fewer small S than expected -> model expects worse crashes than happen -> tail TOO THICK
 
-All probabilities here are CONDITIONAL on the loss exceeding u (see the model limitation:
-the probability of exceeding u itself is not modelled).
+Parts 1-2 are CONDITIONAL on the loss exceeding u. Stage 1 of the two-stage model,
+p_u(x) = P(L > u | x), turns them into unconditional probabilities:
+    P(L > l | x) = p_u(x) * S(l - u | x)
+
+Part 3 -- two-stage model on ALL validation stock-days (artifacts/two_stage_validation.png)
+    (a) p_u calibration: mean predicted p_u vs observed exceedance rate per p_u decile
+    (b) VaR backtest: breach rate of VaR_alpha vs alpha (99.9 / 99.5 / 99 / 98)
+    (c) VaR99 breach rate per p_u decile: two-stage model vs a constant 10% instead of p_u(x)
+    (d) the Part 1 stock over the validation period: daily loss vs its VaR99, breaches marked
 
 Run:
     .venv/bin/python evaluate_tail.py                         # biggest validation loss
@@ -113,7 +120,12 @@ def load_everything():
             raise SystemExit(f"Missing {p}. Run `TQT research machine learning part.py` first.")
 
     meta = json.loads(meta_path.read_text())
-    model = _training_module().load_gpd_model(model_path, meta["gpd_scale"])
+    tm = _training_module()
+    model = tm.load_gpd_model(model_path, meta["gpd_scale"], meta.get("pi_min", tm.PI_MIN))
+    pu_path = ARTIFACT_DIR / tm.PU_MODEL_FILE
+    if not pu_path.exists():
+        raise SystemExit(f"Missing {pu_path}. Run `TQT research machine learning part.py` first.")
+    pu_model = tm.load_pu_model(pu_path)
 
     df = pd.read_csv(data_path, parse_dates=["date"])
     df = df.sort_values(["ticker", "date"]).reset_index(drop=True)
@@ -124,7 +136,7 @@ def load_everything():
     df["excess"] = df["loss"] - u
     df["is_val"] = df["date"] >= pd.Timestamp(meta["train_val_split_date"])
     df["is_exc"] = df["loss"] > u
-    return meta, model, df
+    return meta, model, pu_model, tm, df
 
 
 def preprocess(X, meta):
@@ -136,13 +148,20 @@ def preprocess(X, meta):
     return np.clip(Z, -clip, clip).astype("float32")
 
 
-def predict_params(model, meta, rows):
+def predict_params(model, meta, rows, pu_model=None):
+    X = torch.from_numpy(preprocess(rows[meta["feature_names"]].values, meta))
+    model.eval()
     with torch.no_grad():
-        pred = model(torch.from_numpy(preprocess(rows[meta["feature_names"]].values, meta))).numpy()
+        pred = model(X).numpy()
     out = rows.copy()
     for i, c in enumerate(PARAM_COLS):
         out[c] = pred[:, i].astype(float)
-    out["S"] = mix_survival(out["excess"].values, *(out[c].values for c in PARAM_COLS))
+    out["S"] = mix_survival(np.maximum(out["excess"].values, 0.0),
+                            *(out[c].values for c in PARAM_COLS))
+    if pu_model is not None:                 # stage 1: p_u(x) = P(L > u | x)
+        out["p_u"] = pu_model.predict_proba(X).numpy().astype(float)
+        out["P_uncond"] = np.where(out["loss"] > float(meta["threshold_u_loss"]),
+                                   out["p_u"] * out["S"], np.nan)
     return out
 
 
@@ -175,6 +194,7 @@ def fmt_prob(p):
 def plot_one_day(row, u, save_path, show, meta=None, val_S=None):
     xi_b, beta_b, xi_h, beta_h, pi = params = row_params(row)
     y_real, S = float(row["excess"]), float(row["S"])
+    p_u = float(row["p_u"]) if "p_u" in row else None
     q90, q99 = mix_quantile(0.90, *params), mix_quantile(0.99, *params)
 
     # the two components via GPD_model.plot_gpd (thin), then the mixture on top (bold)
@@ -216,7 +236,9 @@ def plot_one_day(row, u, save_path, show, meta=None, val_S=None):
 
     ax_lin.annotate(
         f"actual loss {row['loss']:.2%}\nexcess y = {y_real:.2%}\n"
-        f"S(y) = P(excess > y) = {fmt_prob(S)}",
+        f"S(y) = P(excess > y) = {fmt_prob(S)}"
+        + (f"\np_u(x) = P(L > u) = {p_u:.2%}\nP(L > actual) = p_u·S = {fmt_prob(p_u * S)}"
+           if p_u is not None else ""),
         xy=(y_real, ax_lin.get_ylim()[1] * 0.55), xytext=(-8, 0), textcoords="offset points",
         color=INK, fontsize=9, va="center", ha="right")
     ax_lin.text(q99, ax_lin.get_ylim()[1] * 0.78, "  model 99% quantile",
@@ -237,6 +259,8 @@ def plot_one_day(row, u, save_path, show, meta=None, val_S=None):
         f"π = {pi:.3f}, ξ_b = {xi_b:.3f}, β_b = {beta_b:.4f}, ξ_h = {xi_h:.3f}, β_h = {beta_h:.4f}\n"
         f"Shaded = model probability of a loss at least this deep: {fmt_prob(S)} -- {verdict}.  "
         f"(conditional on loss > u = {u:.2%}; one day is an example, not evidence)"
+        + (f"\nStage 1: p_u(x) = P(loss > u) = {p_u:.2%}  ->  unconditional P(loss ≥ actual) = "
+           f"p_u·S = {fmt_prob(p_u * S)}" if p_u is not None else "")
         + (f"\nS rank: {rank} of {n_days} validation days (smallest = 1; a correct model's smallest "
            f"S would be about {1 / n_days:.2%})\n{model_label(meta)}" if val_S is not None else ""),
         fontsize=10)
@@ -248,6 +272,8 @@ def plot_one_day(row, u, save_path, show, meta=None, val_S=None):
     print(f"  actual loss = {row['loss']:.2%}, excess over u = {y_real:.2%}")
     print(f"  model 90% / 99% quantile of excess = {q90:.2%} / {q99:.2%}")
     print(f"  S(y) = {fmt_prob(S)}  -> {verdict}")
+    if p_u is not None:
+        print(f"  stage 1 p_u(x) = {p_u:.2%}  -> unconditional P(L >= actual) = {fmt_prob(p_u * S)}")
     if val_S is not None:
         print(f"  S rank {rank} of {n_days} validation days "
               f"(a correct model's smallest S would be about {1 / n_days:.2%})")
@@ -279,7 +305,7 @@ def calibration_table(S):
 
 def model_label(meta):
     """Short description of the trained model for titles and printouts."""
-    return (f"gated GPD mixture {tuple(meta.get('hidden_units', []))}+gate{meta.get('gate_units')}, "
+    return (f"two-stage: p_u net + gated GPD mixture {tuple(meta.get('hidden_units', []))}+gate{meta.get('gate_units')}, "
             f"pi_min {meta.get('pi_min')}, {len(meta.get('feature_names', []))} factors, "
             f"L2 {meta.get('l2')}, best epoch {meta.get('best_epoch', '?')}")
 
@@ -372,7 +398,123 @@ def plot_calibration(val, tab, ks, save_path, meta=None, nll=None, mae=None):
 
 
 # ==========================================
-# 4. Main
+# 4. Part 3: two-stage model on all validation stock-days
+# ==========================================
+
+def two_stage_validation(tm, val_all, u, ticker, save_path, meta):
+    p_u = val_all["p_u"].values
+    params = val_all[PARAM_COLS].values
+    L = val_all["loss"].values
+    e = (L > u).astype(float)
+    n = len(L)
+
+    # (a) p_u calibration per decile
+    dec = pd.qcut(p_u, 10, labels=False, duplicates="drop")
+    cal = pd.DataFrame({"p": p_u, "e": e, "d": dec}).groupby("d").agg(p=("p", "mean"), e=("e", "mean"),
+                                                                       n=("e", "size"))
+    auc = tm.auc_score(p_u, e)
+    ll = float(-np.mean(e * np.log(np.clip(p_u, 1e-7, 1)) + (1 - e) * np.log(np.clip(1 - p_u, 1e-7, 1))))
+    base = 1 - meta["tail_quantile"]
+    ll_c = float(-np.mean(e * np.log(base) + (1 - e) * np.log(1 - base)))
+
+    # (b) VaR backtest, (c) VaR99 by p_u decile
+    bt = tm.var_backtest(p_u, params, L, u)
+    dec99 = pd.DataFrame(tm.var99_by_decile(p_u, params, L, u))
+
+    print(f"\n[Part 3] two-stage model on all {n} validation stock-days")
+    print(f"  stage 1: log-loss {ll:.4f} (constant {base:.0%}: {ll_c:.4f}), AUC {auc:.3f}, "
+          f"decile calibration error mean {100 * (cal.p - cal.e).abs().mean():.2f} pp")
+    for a, r in bt.items():
+        print(f"  VaR{100 * (1 - float(a)):g}: breach {r['breach_rate']:.3%} (expected {float(a):.1%}), "
+              f"Kupiec p {r['kupiec_p']:.3f}")
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    (ax_a, ax_b), (ax_c, ax_d) = axes
+
+    lo = stats.binom.ppf(0.025, cal.n, cal.p) / cal.n
+    hi = stats.binom.ppf(0.975, cal.n, cal.p) / cal.n
+    lim = [0, 1.08 * max(cal.p.max(), cal.e.max())]
+    ax_a.plot(lim, lim, color=REF_GRAY, ls="--", lw=1.2, label="perfect calibration")
+    ax_a.vlines(cal.p, lo, hi, color=REF_GRAY, lw=5, alpha=0.45,
+                label="95% range if p_u is correct")
+    ax_a.plot(cal.p, cal.e, color=OBS_COLOR, marker="o", ms=7, lw=2,
+              markeredgecolor="white", markeredgewidth=1.5, label="observed rate per decile")
+    ax_a.axhline(base, color=MUTED, ls=":", lw=1, label=f"constant {base:.0%}")
+    ax_a.set_xlim(lim)
+    ax_a.set_ylim(lim)
+    ax_a.xaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
+    ax_a.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
+    ax_a.set_xlabel("mean predicted p_u(x) in the decile")
+    ax_a.set_ylabel("observed share of days with loss > u")
+    ax_a.set_title(f"(a) Stage 1 calibration by p_u decile   AUC {auc:.3f}, "
+                   f"log-loss {ll:.4f} (const: {ll_c:.4f})", fontsize=10)
+    ax_a.legend(frameon=False, fontsize=8, loc="upper left")
+
+    alphas = np.array([float(a) for a in bt])
+    obs = np.array([bt[a]["breach_rate"] for a in bt])
+    b_lo = stats.binom.ppf(0.025, n, alphas) / n
+    b_hi = stats.binom.ppf(0.975, n, alphas) / n
+    ax_b.fill_between(alphas, b_lo, b_hi, color=REF_GRAY, alpha=0.2, lw=0,
+                      label="95% range if VaR is correct")
+    ax_b.plot(alphas, alphas, color=REF_GRAY, ls="--", lw=1.2, label="expected")
+    ax_b.plot(alphas, obs, color=OBS_COLOR, marker="o", ms=7, lw=2,
+              markeredgecolor="white", markeredgewidth=1.5, label="observed breach rate")
+    for a, o in zip(alphas, obs):
+        ax_b.annotate(f"{o:.3%}", (a, o), xytext=(6, -12), textcoords="offset points",
+                      fontsize=8, color=INK)
+    ax_b.set_xscale("log")
+    ax_b.set_yscale("log")
+    ax_b.set_xticks(alphas, [f"VaR{100 * (1 - a):g}\n({a:.1%})" for a in alphas])
+    ax_b.minorticks_off()
+    ax_b.set_ylabel("share of days with loss > VaR")
+    ax_b.set_title(f"(b) Unconditional VaR backtest, {n:,} validation stock-days\n"
+                   "below the band = too conservative, above = too risky", fontsize=10)
+    ax_b.legend(frameon=False, fontsize=8, loc="upper left")
+
+    x = dec99["decile"].values
+    w = 0.38
+    ax_c.bar(x - w / 2, dec99["breach_model"], w, color=OBS_COLOR, label="two-stage: p_u(x)·S")
+    ax_c.bar(x + w / 2, dec99["breach_constant_p_u"], w, color=REF_GRAY,
+             label="constant 10% instead of p_u(x)")
+    ax_c.axhline(0.01, color=LOSS_COLOR, ls="--", lw=1.2, label="target 1%")
+    ax_c.set_xticks(x, [f"{d}\n{p:.1%}" for d, p in zip(x, dec99["mean_p_u"])])
+    ax_c.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.1%}"))
+    ax_c.set_xlabel("p_u decile (1 = calmest) and its mean p_u")
+    ax_c.set_ylabel("VaR99 breach rate")
+    ax_c.set_title("(c) VaR99 breaches by risk decile: p_u(x) keeps them flat at ~1%",
+                   fontsize=10)
+    ax_c.legend(frameon=False, fontsize=8, loc="upper left")
+
+    one = val_all[val_all["ticker"] == ticker].sort_values("date")
+    var99, _ = tm.var_es(one["p_u"].values, one[PARAM_COLS].values, 0.01, u)
+    t = one["loss_date"].fillna(one["date"])
+    breach = one["loss"].values > np.nan_to_num(var99, nan=u)
+    ax_d.bar(t, one["loss"].clip(lower=0), width=1.0, color=REF_GRAY, label="daily loss (gains = 0)")
+    ax_d.plot(t, var99, color=OBS_COLOR, lw=1.4, label="VaR99 (two-stage)")
+    ax_d.axhline(u, color=MUTED, ls=":", lw=1, label=f"threshold u = {u:.2%}")
+    ax_d.scatter(t[breach], one["loss"].values[breach], color=LOSS_COLOR, s=22, zorder=3,
+                 label=f"breach ({breach.sum()} of {len(one)} days = {breach.mean():.1%})")
+    ax_d.yaxis.set_major_formatter(plt.FuncFormatter(lambda v, _: f"{v:.0%}"))
+    import matplotlib.dates as mdates
+    ax_d.xaxis.set_major_locator(mdates.AutoDateLocator(maxticks=8))
+    ax_d.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
+    ax_d.set_ylabel("loss")
+    ax_d.set_title(f"(d) {ticker} over the validation period: loss vs its daily VaR99", fontsize=10)
+    ax_d.legend(frameon=False, fontsize=8, loc="upper left")
+
+    for ax in axes.ravel():
+        ax.grid(alpha=0.25)
+        ax.spines[["top", "right"]].set_visible(False)
+    fig.suptitle("Two-stage tail model on ALL validation stock-days:  "
+                 "P(L > l | x) = p_u(x) · S(l − u | x)\n" + model_label(meta), fontsize=11)
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=150)
+    print(f"  figure: {save_path}")
+    return fig
+
+
+# ==========================================
+# 5. Main
 # ==========================================
 
 def main():
@@ -386,16 +528,18 @@ def main():
     parser.add_argument("--no-show", action="store_true", help="save PNGs without opening windows")
     args = parser.parse_args()
 
-    meta, model, df = load_everything()
+    meta, model, pu_model, tm, df = load_everything()
     u = float(meta["threshold_u_loss"])
 
-    exc = predict_params(model, meta, df[df["is_exc"]])
+    val_all = predict_params(model, meta, df[df["is_val"]], pu_model)       # every validation row
+    exc = pd.concat([predict_params(model, meta, df[df["is_exc"] & ~df["is_val"]], pu_model),
+                     val_all[val_all["is_exc"]]])
     val, train = exc[exc["is_val"]], exc[~exc["is_val"]]
     print(f"Threshold u = {u:.4%} loss, split date {meta['train_val_split_date']}, "
           f"exceedances: train {len(train)}, validation {len(val)}")
 
     if args.list:
-        cols = ["date", "loss_date", "ticker", "loss", "pi", "xi_b", "beta_b", "S"]
+        cols = ["date", "loss_date", "ticker", "loss", "p_u", "pi", "xi_b", "beta_b", "S"]
         top = val.nlargest(15, "loss")[cols].copy()
         top["loss"] = top["loss"].map("{:.2%}".format)
         top["S"] = top["S"].map("{:.2%}".format)
@@ -418,6 +562,9 @@ def main():
     for c in ("pi", "xi_b", "beta_b"):
         print(f"  predicted {c:<6} on validation exceedances: 5% {val[c].quantile(.05):.4f}, "
               f"median {val[c].median():.4f}, 95% {val[c].quantile(.95):.4f}")
+
+    two_stage_validation(tm, val_all, u, row["ticker"],
+                         ARTIFACT_DIR / "two_stage_validation.png", meta)
 
     if not args.no_show:
         plt.show()
