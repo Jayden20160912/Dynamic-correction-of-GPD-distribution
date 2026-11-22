@@ -372,10 +372,12 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
             params = self.model.forward(X)
             R, R_base, R_heavy = mixture_tail_risk(params, D_LOSS, self.model.u)
             weights, cash, v, B, c = allocate_from_risk(R, self.r_target, GAMMA, DELTA)
-            self.plot("Exposure", "invested c", c)
-            self.plot("Risk", "B (full investment)", B)
-            self.plot("Risk", "R_target", self.r_target)
-            self.plot("Risk", "heavy share of R", float(np.mean(R_heavy / R)))
+            # chart names must not clash with QuantConnect's built-in charts
+            # ("Strategy Equity", "Exposure", "Benchmark", "Drawdown", "Capacity", ...)
+            self.plot("GPD Invested", "invested c", c)
+            self.plot("GPD Risk", "B (full investment)", B)
+            self.plot("GPD Risk", "R_target", self.r_target)
+            self.plot("GPD Heavy Share", "heavy share of R", float(np.mean(R_heavy / R)))
         elif MODE == "equal":
             weights = np.full(len(syms), 1.0 / len(syms))
         elif MODE == "inverse_vol":
