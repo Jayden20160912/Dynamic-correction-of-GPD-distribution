@@ -39,9 +39,9 @@ TICKERS = ["AAPL", "JPM", "XOM", "MRK", "PG", "DIS", "UNH", "NKE", "BA", "LULU",
            "SMP", "TILE", "HCSG", "ARLO", "PRDO", "MLKN", "LZB", "WGO", "HELE", "OI"]
 # The model was trained on 2016-01-01 .. 2024-12-31 (data after 2023-03-30 was used for model
 # selection), so 2025-01-01 onwards is genuinely out of sample.
-START_DATE = (2025, 1, 1)
+START_DATE = (2023, 1, 1)
 END_DATE = (2026, 10, 30)
-CASH = 1_000_000
+CASH = 10000000
 
 # Files downloaded from GitHub at start-up ("raw" links of a PUBLIC repository).
 # GITHUB_BRANCH is the branch the files are read from; a commit hash pins an exact version.
@@ -68,7 +68,7 @@ HISTORY_BARS = 320      # daily bars needed per stock (echo_q looks back 255 ret
 # Trade only when the relative weights v move enough. Distance between two days' weights:
 #     TV(v_today, v_ref) = 0.5 * sum_i |v_today,i - v_ref,i|      (0 = identical, 1 = no overlap)
 # Otherwise the current holdings are kept unchanged (no orders that day).
-REBALANCE_TV_THRESHOLD = 0.075         # 0 = rebalance every day
+REBALANCE_TV_THRESHOLD = 0.12        # 0 = rebalance every day
 REBALANCE_REFERENCE = "previous_day"   # "previous_day":   compare with yesterday's v
                                        # "last_rebalance": compare with v of the last actual rebalance
                                        #                   (catches slow drift that never jumps in one day)
