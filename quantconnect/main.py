@@ -10,9 +10,11 @@ Each trading day:
 
 How to run
   1. Locally:  python export_model_for_qc.py --artifacts ../artifacts
-     -> writes gpd_mixture_model.json (weights + preprocessing statistics)
-  2. QuantConnect -> Object Store: upload gpd_mixture_model.json (key = MODEL_KEY below)
-  3. New Python project, paste this file as main.py, edit the CONFIG section, run a backtest.
+     -> writes gpd_mixture_model.json (weights + preprocessing statistics in one file;
+        gpd_model.pt and preprocess.json are not needed on QuantConnect)
+  2. Commit and push gpd_mixture_model.json to GitHub (public repository).
+  3. New Python project on QuantConnect, paste this file as main.py, edit the CONFIG section,
+     run a backtest. The model is downloaded from MODEL_URL with self.download().
 
 The network forward pass is written in numpy (no torch needed on QuantConnect);
 export_model_for_qc.py checks that it matches the PyTorch model exactly.
@@ -35,7 +37,11 @@ START_DATE = (2025, 1, 1)
 END_DATE = (2026, 10, 30)
 CASH = 1_000_000
 
-MODEL_KEY = "gpd_mixture_model.json"   # Object Store key of the exported model
+# The exported model (written by export_model_for_qc.py), downloaded from GitHub at start-up.
+# Must be the "raw" link of a PUBLIC repository. To pin an exact model version, replace
+# "main" with a commit hash.
+MODEL_URL = ("https://raw.githubusercontent.com/Jayden20160912/Dynamic-correction-of-GPD-distribution/"
+             "main/quantconnect/gpd_mixture_model.json")
 
 MODE = "gpd"            # "gpd" = this strategy; "equal" / "inverse_vol" = benchmarks on the same stocks
 D_LOSS = 0.07           # disaster loss threshold d
@@ -276,10 +282,7 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         self.set_benchmark(self.spy)
         self.vix = self.add_data(CBOE, "VIX", Resolution.DAILY).symbol
 
-        if not self.object_store.contains_key(MODEL_KEY):
-            raise ValueError(f"Object Store key '{MODEL_KEY}' not found. Upload the file written by "
-                             f"export_model_for_qc.py first.")
-        self.model = GPDMixtureModel(json.loads(self.object_store.read(MODEL_KEY)))
+        self.model = GPDMixtureModel(self.download_model_json())
         if not 0 <= self.model.u < D_LOSS:
             raise ValueError(f"need 0 <= u < d, got u={self.model.u}, d={D_LOSS}")
         self.log(f"model loaded: u = {self.model.u:.4f}, features = {self.model.feature_names}")
@@ -295,6 +298,20 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         self.schedule.on(self.date_rules.every_day(self.spy),
                          self.time_rules.after_market_open(self.spy, REBALANCE_MINUTES_AFTER_OPEN),
                          self.rebalance)
+
+    # ---------------------------------------------------------------- model
+    def download_model_json(self):
+        """Download the exported model from MODEL_URL and check that it is the right file."""
+        text = self.download(MODEL_URL)
+        if not text or not text.lstrip().startswith("{"):
+            raise ValueError(f"could not download the model from {MODEL_URL} "
+                             f"(got: {str(text)[:80]!r}). Check that the URL is the raw link "
+                             f"and that the repository is public.")
+        model_json = json.loads(text)
+        if model_json.get("format") != "gpd_mixture_numpy_v1":
+            raise ValueError(f"{MODEL_URL} is not a model exported by export_model_for_qc.py")
+        self.log(f"model downloaded from {MODEL_URL} ({len(text) / 1e3:.0f} KB)")
+        return model_json
 
     # ---------------------------------------------------------------- data
     def vix_series(self, bars):
