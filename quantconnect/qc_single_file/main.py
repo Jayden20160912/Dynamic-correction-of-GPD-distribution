@@ -315,6 +315,8 @@ REBALANCE_REFERENCE = "previous_day"   # "previous_day":   compare with yesterda
 
 # ---- comparison chart (strategy vs. 30-stock average vs. S&P 500) ----
 COMPARISON_CHART = "Strategy vs Benchmarks"   # must not be a reserved chart name
+# ---- holdings as % of portfolio value (chart "GPD Holdings", header statistics, log) ----
+HOLDINGS_LOG = "weekly"     # "daily" / "weekly" (Fridays) / None: log every stock's weight
 
 
 # =============================================================================
@@ -558,15 +560,12 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
 
     # ---------------------------------------------------------------- comparison chart
     def plot_comparison(self):
-        """Plot, once a day just before the close, three lines that all start at CASH:
-           - the strategy's portfolio value;
-           - the 30 stocks' average price, each price divided by its own first price
-             (= an equal-weight buy-and-hold of the 30 stocks);
-           - SPY, the S&P 500 ETF.
-        A plain average of raw prices is not used: it would be dominated by high-priced
-        stocks (e.g. a $500 stock would count 50x more than a $10 stock)."""
+        """Daily, before the close; all lines start at CASH: strategy value, the 30 stocks'
+        average of price / first price (= equal-weight buy-and-hold; raw prices would let
+        high-priced stocks dominate), and SPY."""
         if self.is_warming_up:
             return
+        self.record_holdings()
         rel = []
         for s in self.symbols:
             px = self.securities[s].price
@@ -580,6 +579,25 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         self.plot(COMPARISON_CHART, "GPD strategy", self.portfolio.total_portfolio_value)
         self.plot(COMPARISON_CHART, "30 stocks average (equal weight)", CASH * float(np.mean(rel)))
         self.plot(COMPARISON_CHART, "S&P 500 (SPY)", CASH * spy_px / spy0)
+
+    def record_holdings(self):
+        """Holdings / portfolio value, just before the close: chart, header statistics, log."""
+        total = float(self.portfolio.total_portfolio_value)
+        if total <= 0:
+            return
+        w = {ticker_of(s): float(self.portfolio[s].holdings_value) / total
+             for s in self.symbols if self.portfolio[s].invested}
+        inv = sum(w.values())
+        top = max(w.items(), key=lambda kv: kv[1], default=("-", 0.0))
+        self.plot("GPD Holdings", "invested %", 100 * inv)
+        self.plot("GPD Holdings", "cash %", 100 * (1 - inv))
+        self.plot("GPD Holdings", "largest stock %", 100 * top[1])
+        self.plot("GPD Holdings", "stocks held", len(w))
+        self.set_runtime_statistic("Invested", f"{inv:.1%}")
+        self.set_runtime_statistic("Largest", f"{top[0]} {top[1]:.1%}")
+        if HOLDINGS_LOG == "daily" or (HOLDINGS_LOG == "weekly" and self.time.weekday() == 4):
+            items = " ".join(f"{t} {x:.1%}" for t, x in sorted(w.items(), key=lambda kv: -kv[1]))
+            self.log(f"holdings: invested {inv:.1%}, cash {1 - inv:.1%} | {items}")
 
     def invested_fraction(self):
         """Current long exposure of the portfolio (market value of holdings / total value)."""
