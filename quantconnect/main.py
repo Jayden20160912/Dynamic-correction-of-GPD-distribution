@@ -4,8 +4,9 @@ GPD-mixture tail-risk allocation strategy for QuantConnect (LEAN, Python).
 Each trading day:
   1. take daily bars of the chosen stocks up to yesterday's close (day t)
   2. compute the 13 factors for every stock
-  3. run the trained gated GPD-mixture network -> 5 parameters per stock
-  4. turn them into a catastrophic-risk score R, relative weights v and total exposure c
+  3. run the trained gated GPD-mixture network -> 5 parameters per stock, and the
+     exceedance network -> p_u = P(loss > u)
+  4. turn them into a catastrophic-risk score R = p_u * R_GPD, relative weights v and exposure c
   5. rebalance 30 minutes after today's open (day t+1); the rest stays in cash
 
 How to run
@@ -57,7 +58,10 @@ SEC_FACTORS_URL = f"{GITHUB_RAW}/{GITHUB_BRANCH}/qc_sec_factors.csv"
 MODE = "gpd"            # "gpd" = this strategy; "equal" / "inverse_vol" = benchmarks on the same stocks
 D_LOSS = 0.07           # disaster loss threshold d
 GAMMA = 1.0             # sensitivity of inverse-risk weighting
-DELTA = 1e-6            # numerical stability
+DELTA = 1e-9            # numerical stability only; must stay far below the smallest R
+                        # (with p_u the scores are ~10x smaller: R >= p_u * pi_min * 0.0074)
+USE_PU = True           # True:  R = p_u(x) * E[(L-d)^+ | L > u]  = E[(L-d)^+]  (unconditional)
+                        # False: R = E[(L-d)^+ | L > u]              (GPD part only, as before)
 R_TARGET = None         # fixed risk budget, or None = calibrate from the CALIB_DAYS before START_DATE
 CALIB_DAYS = 252        # calibration window (trading days) when R_TARGET is None
 TARGET_QUANTILE = 0.5   # R_target = this quantile of the full-investment risk B_t in the calibration window
@@ -206,6 +210,11 @@ class GPDMixtureModel:
         self.clip_z = float(m["clip_z"])
         self.w = {k: np.asarray(v, dtype=float) for k, v in model_json["weights"].items()}
         self.scale = float(np.asarray(self.w["scale"]).reshape(()))
+        pu = model_json.get("pu")                       # stage-1 exceedance network (optional)
+        self.has_pu = pu is not None
+        if self.has_pu:
+            self.pu_w = {k: np.asarray(v, dtype=float) for k, v in pu["weights"].items()}
+            self.pu_eps = float(pu["bn_eps"])
 
     def zscores(self, X):
         """Raw factors (n, 13) -> standardised factors before clipping (used for diagnostics)."""
@@ -217,10 +226,24 @@ class GPDMixtureModel:
         """Same as training: median fill -> z-score with training stats -> clip to +/- clip_z."""
         return np.clip(self.zscores(X), -self.clip_z, self.clip_z)
 
-    def _bn(self, x, prefix):
-        w = self.w
-        return ((x - w[prefix + ".running_mean"]) / np.sqrt(w[prefix + ".running_var"] + self.eps)
+    def _bn(self, x, prefix, w=None, eps=None):
+        w = self.w if w is None else w
+        eps = self.eps if eps is None else eps
+        return ((x - w[prefix + ".running_mean"]) / np.sqrt(w[prefix + ".running_var"] + eps)
                 * w[prefix + ".weight"] + w[prefix + ".bias"])
+
+    def exceedance_prob(self, X_raw):
+        """Stage 1: raw factors (n, 13) -> p_u = P(L > u | x), shape (n,).
+        Linear(13,224,no bias)-BN-ReLU-Linear(224,88,no bias)-BN-ReLU-Linear(88,1) -> sigmoid.
+        Uses the same preprocessing (median fill, z-score, clip) as the GPD network."""
+        if not self.has_pu:
+            raise ValueError("the model JSON has no exceedance network ('pu'); "
+                             "re-run export_model_for_qc.py with pu_model.pt in artifacts/")
+        w, eps = self.pu_w, self.pu_eps
+        x = self.preprocess(X_raw)
+        h = np.maximum(self._bn(x @ w["trunk.0.weight"].T, "trunk.1", w, eps), 0.0)
+        h = np.maximum(self._bn(h @ w["trunk.3.weight"].T, "trunk.4", w, eps), 0.0)
+        return _sigmoid((h @ w["out.weight"].T + w["out.bias"])[:, 0])
 
     def forward(self, X_raw):
         """Raw factor matrix (n, 13) in feature_names order -> parameters (n, 5)."""
@@ -257,6 +280,19 @@ def mixture_tail_risk(params, d, u):
     base = (1.0 - pi) * gpd_expected_excess(xi_b, beta_b, a)
     heavy = pi * gpd_expected_excess(xi_h, beta_h, a)
     return base + heavy, base, heavy
+
+
+def tail_risk_scores(model, X, d, use_pu=True):
+    """Raw factors (n, 13) -> risk score per stock.
+
+        R_cond = E[(L - d)^+ | L > u]       from the GPD mixture (five parameters)
+        R      = p_u * R_cond = E[(L - d)^+]  when use_pu, because (L - d)^+ = 0 whenever L <= u < d
+
+    Returns R, base part, heavy part (both already multiplied by p_u) and p_u."""
+    params = model.forward(X)
+    R, base, heavy = mixture_tail_risk(params, d, model.u)
+    p_u = model.exceedance_prob(X) if use_pu else np.ones(len(R))
+    return p_u * R, p_u * base, p_u * heavy, p_u
 
 
 def allocate_from_risk(R, R_target, gamma=1.0, delta=1e-6):
@@ -352,6 +388,11 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         if not 0 <= self.model.u < D_LOSS:
             raise ValueError(f"need 0 <= u < d, got u={self.model.u}, d={D_LOSS}")
         self.log(f"model loaded: u = {self.model.u:.4f}, features = {self.model.feature_names}")
+        if USE_PU and not self.model.has_pu:
+            raise ValueError(f"USE_PU = True but {MODEL_URL} has no exceedance network. Re-run "
+                             f"export_model_for_qc.py (with pu_model.pt in artifacts/) and push "
+                             f"the new gpd_mixture_model.json, or set USE_PU = False.")
+        self.log(f"risk score: {'p_u * E[(L-d)+ | L>u]' if USE_PU else 'E[(L-d)+ | L>u] (no p_u)'}")
         missing = [n for n in self.model.feature_names
                    if n not in compute_factor_panel(_dummy_bars()).columns]
         if missing:
@@ -439,8 +480,7 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
             raise ValueError("no history for calibration; set R_TARGET to a number instead")
         panel = pd.concat(frames)
         X = panel.reindex(columns=self.model.feature_names).to_numpy(dtype=float)  # missing -> NaN
-        params = self.model.forward(X)
-        panel["R"] = mixture_tail_risk(params, D_LOSS, self.model.u)[0]
+        panel["R"] = tail_risk_scores(self.model, X, D_LOSS, USE_PU)[0]
         B = panel.groupby(level=0)["R"].apply(
             lambda R: allocate_from_risk(R.to_numpy(), np.inf, GAMMA, DELTA)[3])
         self.log(f"calibration: {len(B)} days, B_t median {B.median():.6g}, "
@@ -466,8 +506,7 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
             self.checked_distribution = True
 
         if MODE == "gpd":
-            params = self.model.forward(X)
-            R, R_base, R_heavy = mixture_tail_risk(params, D_LOSS, self.model.u)
+            R, R_base, R_heavy, p_u = tail_risk_scores(self.model, X, D_LOSS, USE_PU)
             weights, cash, v, B, c = allocate_from_risk(R, self.r_target, GAMMA, DELTA)
             # chart names must not clash with QuantConnect's built-in charts
             # ("Strategy Equity", "Exposure", "Benchmark", "Drawdown", "Capacity", ...)
@@ -475,6 +514,9 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
             self.plot("GPD Risk", "B (full investment)", B)
             self.plot("GPD Risk", "R_target", self.r_target)
             self.plot("GPD Heavy Share", "heavy share of R", float(np.mean(R_heavy / R)))
+            if USE_PU:
+                self.plot("GPD Exceedance", "mean p_u", float(np.mean(p_u)))
+                self.plot("GPD Exceedance", "max p_u", float(np.max(p_u)))
         elif MODE == "equal":
             weights = np.full(len(syms), 1.0 / len(syms))
             v = weights
