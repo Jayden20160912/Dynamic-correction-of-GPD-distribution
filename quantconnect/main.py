@@ -40,7 +40,7 @@ TICKERS = ["AAPL", "JPM", "XOM", "MRK", "PG", "DIS", "UNH", "NKE", "BA", "LULU",
            "SMP", "TILE", "HCSG", "ARLO", "PRDO", "MLKN", "LZB", "WGO", "HELE", "OI"]
 # The model was trained on 2016-01-01 .. 2024-12-31 (data after 2023-03-30 was used for model
 # selection), so 2025-01-01 onwards is genuinely out of sample.
-START_DATE = (2023, 1, 1)
+START_DATE = (2025, 1, 1)
 END_DATE = (2026, 10, 30)
 CASH = 10000000
 
@@ -101,6 +101,22 @@ GAMMA, DELTA, R_TARGET, REBALANCE_TV_THRESHOLD = select_risk_profile(USE_PU)
 
 CALIB_DAYS = 252        # calibration window (trading days) when R_TARGET is None
 TARGET_QUANTILE = 0.5   # R_target = this quantile of the full-investment risk B_t in the calibration window
+
+# ---- how R_target is set (exposure c = min(1, R_target / B_t)) ----
+R_TARGET_MODE = "rolling"   # "fixed":   one R_target for the whole backtest (R_TARGET, or calibrated
+                            #            from the CALIB_DAYS before START_DATE at TARGET_QUANTILE)
+                            # "rolling": every day R_target = ROLLING_QUANTILE of B over the previous
+                            #            ROLLING_WINDOW trading days (past days only, no look-ahead), so
+                            #            c only drops when risk is high relative to the last year
+ROLLING_WINDOW = 252
+ROLLING_QUANTILE = 0.7
+ROLLING_MIN_DAYS = 60       # fewer past B values than this -> not enough history, use c = 1
+
+# ---- market trend filter ----
+TREND_FILTER = True         # True: if SPY's last close is below its TREND_SMA_DAYS-day average,
+                            #       multiply the exposure by TREND_SCALE (GPD mode only)
+TREND_SMA_DAYS = 200
+TREND_SCALE = 0.5
 REBALANCE_MINUTES_AFTER_OPEN = 30
 HISTORY_BARS = 320      # daily bars needed per stock (echo_q looks back 255 returns)
 
@@ -109,6 +125,11 @@ HISTORY_BARS = 320      # daily bars needed per stock (echo_q looks back 255 ret
 #     TV(v_today, v_ref) = 0.5 * sum_i |v_today,i - v_ref,i|      (0 = identical, 1 = no overlap)
 # Otherwise the current holdings are kept unchanged (no orders that day).
 # REBALANCE_TV_THRESHOLD is set per USE_PU setting in RISK_PROFILES above.
+# The TV distance only looks at the RELATIVE weights v. The total exposure c can change a lot while
+# v stays almost the same (e.g. R rises for all stocks together), and without a second trigger the
+# portfolio would then keep a stale exposure for weeks. So also rebalance when
+#     | c_today - current invested fraction of the portfolio | > REBALANCE_C_THRESHOLD
+REBALANCE_C_THRESHOLD = 0.05           # None = off (only the TV rule, the old behaviour)
 REBALANCE_REFERENCE = "previous_day"   # "previous_day":   compare with yesterday's v
                                        # "last_rebalance": compare with v of the last actual rebalance
                                        #                   (catches slow drift that never jumps in one day)
@@ -437,10 +458,30 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         if missing:
             self.log(f"WARNING: factors not computed by this algorithm (left NaN -> training median): {missing}")
 
-        self.sec = self.download_sec_factors()      # needed before calibrate_r_target()
+        self.sec = self.download_sec_factors()      # needed before calibration_B()
 
-        self.r_target = R_TARGET if R_TARGET is not None else self.calibrate_r_target()
-        self.log(f"R_target = {self.r_target:.6g}")
+        if R_TARGET_MODE not in ("fixed", "rolling"):
+            raise ValueError(f"unknown R_TARGET_MODE {R_TARGET_MODE!r}")
+        self.B_history = []           # B_t of past days (rolling R_target)
+        if MODE == "gpd" and (R_TARGET_MODE == "rolling" or R_TARGET is None):
+            B_cal = self.calibration_B()
+            self.B_history = [float(b) for b in B_cal.iloc[-ROLLING_WINDOW:]]
+        if R_TARGET_MODE == "fixed":
+            if R_TARGET is not None:
+                self.r_target = R_TARGET
+            elif MODE == "gpd":
+                self.r_target = float(B_cal.quantile(TARGET_QUANTILE))
+            else:
+                self.r_target = np.inf        # benchmark modes do not use R_target
+            self.log(f"R_target (fixed) = {self.r_target:.6g}")
+        else:
+            if R_TARGET is not None:
+                self.log("NOTE: R_TARGET is ignored because R_TARGET_MODE = 'rolling'")
+            self.r_target = self.rolling_r_target()
+            self.log(f"R_target (rolling, q = {ROLLING_QUANTILE} of last {ROLLING_WINDOW} days) "
+                     f"starts at {self.r_target:.6g}")
+        self.log(f"trend filter: {'on' if TREND_FILTER else 'off'} "
+                 f"(SPY < {TREND_SMA_DAYS}-day average -> exposure x {TREND_SCALE})")
         self.checked_distribution = False
 
         if REBALANCE_REFERENCE not in ("previous_day", "last_rebalance"):
@@ -505,9 +546,9 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         return factor_panel_from_history(hist, self.symbols, self.vix_series(bars), self.sec)
 
     # ---------------------------------------------------------------- calibration
-    def calibrate_r_target(self):
-        """R_target = TARGET_QUANTILE of the full-investment risk B_t over the CALIB_DAYS
-        trading days before START_DATE (only data that was available before the backtest)."""
+    def calibration_B(self):
+        """Full-investment risk B_t on each of the CALIB_DAYS trading days before START_DATE
+        (only data that was available before the backtest). Seeds the fixed or rolling R_target."""
         panels = self.factor_panels(HISTORY_BARS + CALIB_DAYS)
         frames = []
         for sym, p in panels.items():
@@ -524,7 +565,30 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
             lambda R: allocate_from_risk(R.to_numpy(), np.inf, GAMMA, DELTA)[3])
         self.log(f"calibration: {len(B)} days, B_t median {B.median():.6g}, "
                  f"10%-90% [{B.quantile(0.1):.6g}, {B.quantile(0.9):.6g}]")
-        return float(B.quantile(TARGET_QUANTILE))
+        return B.sort_index()
+
+    def rolling_r_target(self):
+        """ROLLING_QUANTILE of B over the last ROLLING_WINDOW days (today excluded);
+        inf (-> c = 1) while there are fewer than ROLLING_MIN_DAYS past values."""
+        past = self.B_history[-ROLLING_WINDOW:]
+        if len(past) < ROLLING_MIN_DAYS:
+            return np.inf
+        return float(np.quantile(past, ROLLING_QUANTILE))
+
+    def trend_multiplier(self):
+        """TREND_SCALE if SPY's last daily close is below its TREND_SMA_DAYS-day average, else 1."""
+        if not TREND_FILTER:
+            return 1.0
+        try:
+            px = series_from_history(self.history(self.spy, TREND_SMA_DAYS + 5, Resolution.DAILY))
+        except Exception as e:
+            self.debug(f"SPY history unavailable ({e}); trend filter off today")
+            return 1.0
+        px = px.dropna() if px is not None else None
+        if px is None or len(px) < TREND_SMA_DAYS:
+            return 1.0
+        sma = float(px.iloc[-TREND_SMA_DAYS:].mean())
+        return TREND_SCALE if float(px.iloc[-1]) < sma else 1.0
 
     # ---------------------------------------------------------------- daily rebalance
     def rebalance(self):
@@ -546,12 +610,20 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
 
         if MODE == "gpd":
             R, R_base, R_heavy, p_u = tail_risk_scores(self.model, X, D_LOSS, USE_PU)
+            if R_TARGET_MODE == "rolling":
+                self.r_target = self.rolling_r_target()          # from past days only
             weights, cash, v, B, c = allocate_from_risk(R, self.r_target, GAMMA, DELTA)
+            self.B_history.append(B)
+            self.B_history = self.B_history[-ROLLING_WINDOW:]
+            trend = self.trend_multiplier()
+            weights, c = weights * trend, c * trend
+            self.plot("GPD Invested", "trend multiplier", trend)
             # chart names must not clash with QuantConnect's built-in charts
             # ("Strategy Equity", "Exposure", "Benchmark", "Drawdown", "Capacity", ...)
             self.plot("GPD Invested", "invested c", c)
             self.plot("GPD Risk", "B (full investment)", B)
-            self.plot("GPD Risk", "R_target", self.r_target)
+            if np.isfinite(self.r_target):
+                self.plot("GPD Risk", "R_target", self.r_target)
             self.plot("GPD Heavy Share", "heavy share of R", float(np.mean(R_heavy / R)))
             if USE_PU:
                 self.plot("GPD Exceedance", "mean p_u", float(np.mean(p_u)))
@@ -577,9 +649,13 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
             tv = total_variation(v_today, ref)
             self.plot("GPD Rebalance", "TV distance of v", tv)
             self.plot("GPD Rebalance", "threshold", REBALANCE_TV_THRESHOLD)
-            if tv <= REBALANCE_TV_THRESHOLD:
+            c_gap = abs(float(np.sum(weights)) - self.invested_fraction())
+            self.plot("GPD Rebalance", "exposure gap |c - invested|", c_gap)
+            c_moved = REBALANCE_C_THRESHOLD is not None and c_gap > REBALANCE_C_THRESHOLD
+            if tv <= REBALANCE_TV_THRESHOLD and not c_moved:
                 return                      # keep current holdings, no orders today
-        # first day, a stock entered / left, or v moved more than the threshold -> rebalance
+        # first day, a stock entered / left, v moved more than the threshold, or the target
+        # exposure c differs from the current exposure by more than REBALANCE_C_THRESHOLD
 
         targets = [PortfolioTarget(s, float(w)) for s, w in zip(syms, weights)]
         self.set_holdings(targets, liquidate_existing_holdings=True)
@@ -611,9 +687,15 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         self.plot(COMPARISON_CHART, "30 stocks average (equal weight)", CASH * float(np.mean(rel)))
         self.plot(COMPARISON_CHART, "S&P 500 (SPY)", CASH * spy_px / spy0)
 
+    def invested_fraction(self):
+        """Current long exposure of the portfolio (market value of holdings / total value)."""
+        total = float(self.portfolio.total_portfolio_value)
+        return float(self.portfolio.total_holdings_value) / total if total > 0 else 0.0
+
     def on_end_of_algorithm(self):
         self.log(f"rebalanced on {self.n_rebalances} of {self.n_days} trading days "
-                 f"(TV threshold {REBALANCE_TV_THRESHOLD}, reference = {REBALANCE_REFERENCE})")
+                 f"(TV threshold {REBALANCE_TV_THRESHOLD}, exposure threshold {REBALANCE_C_THRESHOLD}, "
+                 f"reference = {REBALANCE_REFERENCE})")
 
     def check_factor_distribution(self, X):
         """Warn if live factors look very different from the training distribution
