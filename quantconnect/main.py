@@ -57,12 +57,48 @@ SEC_FACTORS_URL = f"{GITHUB_RAW}/{GITHUB_BRANCH}/qc_sec_factors.csv"
 
 MODE = "gpd"            # "gpd" = this strategy; "equal" / "inverse_vol" = benchmarks on the same stocks
 D_LOSS = 0.07           # disaster loss threshold d
-GAMMA = 1.0             # sensitivity of inverse-risk weighting
-DELTA = 1e-9            # numerical stability only; must stay far below the smallest R
-                        # (with p_u the scores are ~10x smaller: R >= p_u * pi_min * 0.0074)
+
+# ---- risk score: with or without the exceedance probability p_u ----
 USE_PU = True           # True:  R = p_u(x) * E[(L-d)^+ | L > u]  = E[(L-d)^+]  (unconditional)
                         # False: R = E[(L-d)^+ | L > u]              (GPD part only, as before)
-R_TARGET = None         # fixed risk budget, or None = calibrate from the CALIB_DAYS before START_DATE
+# The parameters below depend on the scale of R, so each setting of USE_PU has its own set.
+# Switching USE_PU picks the matching set automatically (see select_risk_profile below);
+# edit the numbers here, not further down.
+#   GAMMA                   sensitivity of inverse-risk weighting
+#   DELTA                   numerical stability only; must stay far below the smallest R
+#   R_TARGET                fixed risk budget, or None = calibrate from the CALIB_DAYS before START_DATE
+#                           (a manual value must match the scale of R: ~1e-4 with p_u, ~1e-3 without)
+#   REBALANCE_TV_THRESHOLD  trade only if the TV distance of v exceeds this (0 = every day)
+RISK_PROFILES = {
+    True: dict(               # with p_u: R ~ 5e-5 for a typical stock, smallest R ~ 1e-7
+        GAMMA=1.0,
+        DELTA=1e-9,
+        R_TARGET=None,
+        REBALANCE_TV_THRESHOLD=0.12,
+    ),
+    False: dict(              # without p_u: R ~ 7e-4 for a typical stock, R >= pi_min * 0.0074 = 2.2e-4
+        GAMMA=1.0,
+        DELTA=1e-6,
+        R_TARGET=None,
+        REBALANCE_TV_THRESHOLD=0.12,
+    ),
+}
+
+
+def select_risk_profile(use_pu):
+    """Return (GAMMA, DELTA, R_TARGET, REBALANCE_TV_THRESHOLD) for the chosen USE_PU setting."""
+    if use_pu not in RISK_PROFILES:
+        raise ValueError(f"USE_PU must be True or False, got {use_pu!r}")
+    prof = RISK_PROFILES[use_pu]
+    if prof["GAMMA"] < 0 or prof["DELTA"] < 0 or prof["REBALANCE_TV_THRESHOLD"] < 0:
+        raise ValueError(f"GAMMA, DELTA and REBALANCE_TV_THRESHOLD must be >= 0: {prof}")
+    if prof["R_TARGET"] is not None and prof["R_TARGET"] <= 0:
+        raise ValueError(f"R_TARGET must be None or > 0, got {prof['R_TARGET']}")
+    return prof["GAMMA"], prof["DELTA"], prof["R_TARGET"], prof["REBALANCE_TV_THRESHOLD"]
+
+
+GAMMA, DELTA, R_TARGET, REBALANCE_TV_THRESHOLD = select_risk_profile(USE_PU)
+
 CALIB_DAYS = 252        # calibration window (trading days) when R_TARGET is None
 TARGET_QUANTILE = 0.5   # R_target = this quantile of the full-investment risk B_t in the calibration window
 REBALANCE_MINUTES_AFTER_OPEN = 30
@@ -72,7 +108,7 @@ HISTORY_BARS = 320      # daily bars needed per stock (echo_q looks back 255 ret
 # Trade only when the relative weights v move enough. Distance between two days' weights:
 #     TV(v_today, v_ref) = 0.5 * sum_i |v_today,i - v_ref,i|      (0 = identical, 1 = no overlap)
 # Otherwise the current holdings are kept unchanged (no orders that day).
-REBALANCE_TV_THRESHOLD = 0.12        # 0 = rebalance every day
+# REBALANCE_TV_THRESHOLD is set per USE_PU setting in RISK_PROFILES above.
 REBALANCE_REFERENCE = "previous_day"   # "previous_day":   compare with yesterday's v
                                        # "last_rebalance": compare with v of the last actual rebalance
                                        #                   (catches slow drift that never jumps in one day)
@@ -392,7 +428,10 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
             raise ValueError(f"USE_PU = True but {MODEL_URL} has no exceedance network. Re-run "
                              f"export_model_for_qc.py (with pu_model.pt in artifacts/) and push "
                              f"the new gpd_mixture_model.json, or set USE_PU = False.")
-        self.log(f"risk score: {'p_u * E[(L-d)+ | L>u]' if USE_PU else 'E[(L-d)+ | L>u] (no p_u)'}")
+        self.log(f"risk score: {'p_u * E[(L-d)+ | L>u]' if USE_PU else 'E[(L-d)+ | L>u] (no p_u)'}; "
+                 f"USE_PU = {USE_PU} -> GAMMA = {GAMMA}, DELTA = {DELTA}, "
+                 f"R_TARGET = {'auto' if R_TARGET is None else R_TARGET}, "
+                 f"TV threshold = {REBALANCE_TV_THRESHOLD}")
         missing = [n for n in self.model.feature_names
                    if n not in compute_factor_panel(_dummy_bars()).columns]
         if missing:
