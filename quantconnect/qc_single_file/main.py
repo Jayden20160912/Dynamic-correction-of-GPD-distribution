@@ -250,16 +250,16 @@ USE_PU = True           # True:  R = p_u(x) * E[(L-d)^+ | L > u]  = E[(L-d)^+]  
 #   REBALANCE_TV_THRESHOLD  trade only if the TV distance of v exceeds this (0 = every day)
 RISK_PROFILES = {
     True: dict(               # with p_u: R ~ 5e-5 for a typical stock, smallest R ~ 1e-7
-        GAMMA=1.5,
+        GAMMA=1.2,
         DELTA=1e-9,
         R_TARGET=None,
-        REBALANCE_TV_THRESHOLD=0.12,
+        REBALANCE_TV_THRESHOLD=0.2,
     ),
     False: dict(              # without p_u: R ~ 7e-4 for a typical stock, R >= pi_min * 0.0074 = 2.2e-4
-        GAMMA=1.5,
+        GAMMA=1.2,
         DELTA=1e-6,
         R_TARGET=None,
-        REBALANCE_TV_THRESHOLD=0.12,
+        REBALANCE_TV_THRESHOLD=0.2,
     ),
 }
 
@@ -301,7 +301,8 @@ TREND_SCALE = 0.5
 C_FLOOR = 0.3               # c = max(C_FLOOR, min(1, R_target / B)), applied BEFORE the trend filter
                             # (so with the filter on, the lowest exposure is C_FLOOR * TREND_SCALE);
                             # 0 = no floor
-REBALANCE_MINUTES_AFTER_OPEN = 30
+REBALANCE_MINUTES_BEFORE_CLOSE = 30   # trade at 15:30 (12:30 on half days): spreads are narrower
+                                      # late in the day than just after the open
 HISTORY_BARS = 320      # daily bars needed per stock (echo_q looks back 255 returns)
 
 # ---- turnover control ----
@@ -313,7 +314,7 @@ HISTORY_BARS = 320      # daily bars needed per stock (echo_q looks back 255 ret
 # v stays almost the same (e.g. R rises for all stocks together), and without a second trigger the
 # portfolio would then keep a stale exposure for weeks. So also rebalance when
 #     | c_today - current invested fraction of the portfolio | > REBALANCE_C_THRESHOLD
-REBALANCE_C_THRESHOLD = 0.05           # None = off (only the TV rule, the old behaviour)
+REBALANCE_C_THRESHOLD = 0.06           # None = off (only the TV rule, the old behaviour)
 REBALANCE_REFERENCE = "previous_day"   # "previous_day":   compare with yesterday's v
                                        # "last_rebalance": compare with v of the last actual rebalance
                                        #                   (catches slow drift that never jumps in one day)
@@ -393,7 +394,7 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         self.n_rebalances = 0
 
         self.schedule.on(self.date_rules.every_day(self.spy),
-                         self.time_rules.after_market_open(self.spy, REBALANCE_MINUTES_AFTER_OPEN),
+                         self.time_rules.before_market_close(self.spy, REBALANCE_MINUTES_BEFORE_CLOSE),
                          self.rebalance)
 
         # ---- comparison chart: strategy vs. equal-weight 30 stocks vs. S&P 500 ----
