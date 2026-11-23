@@ -250,13 +250,13 @@ USE_PU = True           # True:  R = p_u(x) * E[(L-d)^+ | L > u]  = E[(L-d)^+]  
 #   REBALANCE_TV_THRESHOLD  trade only if the TV distance of v exceeds this (0 = every day)
 RISK_PROFILES = {
     True: dict(               # with p_u: R ~ 5e-5 for a typical stock, smallest R ~ 1e-7
-        GAMMA=1.0,
+        GAMMA=1.5,
         DELTA=1e-9,
         R_TARGET=None,
         REBALANCE_TV_THRESHOLD=0.12,
     ),
     False: dict(              # without p_u: R ~ 7e-4 for a typical stock, R >= pi_min * 0.0074 = 2.2e-4
-        GAMMA=1.0,
+        GAMMA=1.5,
         DELTA=1e-6,
         R_TARGET=None,
         REBALANCE_TV_THRESHOLD=0.12,
@@ -296,6 +296,11 @@ TREND_FILTER = True         # True: if SPY's last close is below its TREND_SMA_D
                             #       multiply the exposure by TREND_SCALE (GPD mode only)
 TREND_SMA_DAYS = 200
 TREND_SCALE = 0.5
+
+# ---- exposure floor ----
+C_FLOOR = 0.3               # c = max(C_FLOOR, min(1, R_target / B)), applied BEFORE the trend filter
+                            # (so with the filter on, the lowest exposure is C_FLOOR * TREND_SCALE);
+                            # 0 = no floor
 REBALANCE_MINUTES_AFTER_OPEN = 30
 HISTORY_BARS = 320      # daily bars needed per stock (echo_q looks back 255 returns)
 
@@ -399,7 +404,6 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
 
     # ---------------------------------------------------------------- model
     def download_model_json(self):
-        """Download the exported model from MODEL_URL and check that it is the right file."""
         text = self.download(MODEL_URL)
         if not text or not text.lstrip().startswith("{"):
             raise ValueError(f"could not download the model from {MODEL_URL} "
@@ -412,7 +416,6 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         return model_json
 
     def download_sec_factors(self):
-        """Download qc_sec_factors.csv from SEC_FACTORS_URL -> {ticker: DataFrame indexed by date}."""
         text = self.download(SEC_FACTORS_URL)
         if not text or not text.lstrip().lower().startswith("date"):
             raise ValueError(f"could not download the SEC factors from {SEC_FACTORS_URL} "
@@ -443,8 +446,6 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
 
     # ---------------------------------------------------------------- calibration
     def calibration_B(self):
-        """Full-investment risk B_t on each of the CALIB_DAYS trading days before START_DATE
-        (only data that was available before the backtest). Seeds the fixed or rolling R_target."""
         panels = self.factor_panels(HISTORY_BARS + CALIB_DAYS)
         frames = []
         for sym, p in panels.items():
@@ -464,15 +465,12 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         return B.sort_index()
 
     def rolling_r_target(self):
-        """ROLLING_QUANTILE of B over the last ROLLING_WINDOW days (today excluded);
-        inf (-> c = 1) while there are fewer than ROLLING_MIN_DAYS past values."""
         past = self.B_history[-ROLLING_WINDOW:]
         if len(past) < ROLLING_MIN_DAYS:
             return np.inf
         return float(np.quantile(past, ROLLING_QUANTILE))
 
     def trend_multiplier(self):
-        """TREND_SCALE if SPY's last daily close is below its TREND_SMA_DAYS-day average, else 1."""
         if not TREND_FILTER:
             return 1.0
         try:
@@ -509,6 +507,9 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
             if R_TARGET_MODE == "rolling":
                 self.r_target = self.rolling_r_target()          # from past days only
             weights, cash, v, B, c = allocate_from_risk(R, self.r_target, GAMMA, DELTA)
+            if c < C_FLOOR:                                   # exposure floor
+                c = C_FLOOR
+                weights = c * v
             self.B_history.append(B)
             self.B_history = self.B_history[-ROLLING_WINDOW:]
             trend = self.trend_multiplier()
@@ -560,9 +561,6 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
 
     # ---------------------------------------------------------------- comparison chart
     def plot_comparison(self):
-        """Daily, before the close; all lines start at CASH: strategy value, the 30 stocks'
-        average of price / first price (= equal-weight buy-and-hold; raw prices would let
-        high-priced stocks dominate), and SPY."""
         if self.is_warming_up:
             return
         self.record_holdings()
@@ -581,7 +579,6 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         self.plot(COMPARISON_CHART, "S&P 500 (SPY)", CASH * spy_px / spy0)
 
     def record_holdings(self):
-        """Holdings / portfolio value, just before the close: chart, header statistics, log."""
         total = float(self.portfolio.total_portfolio_value)
         if total <= 0:
             return
@@ -600,7 +597,6 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
             self.log(f"holdings: invested {inv:.1%}, cash {1 - inv:.1%} | {items}")
 
     def invested_fraction(self):
-        """Current long exposure of the portfolio (market value of holdings / total value)."""
         total = float(self.portfolio.total_portfolio_value)
         return float(self.portfolio.total_holdings_value) / total if total > 0 else 0.0
 
@@ -610,8 +606,6 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
                  f"reference = {REBALANCE_REFERENCE})")
 
     def check_factor_distribution(self, X):
-        """Warn if live factors look very different from the training distribution
-        (usually a sign that a factor is defined differently from features.py)."""
         z = self.model.zscores(X)
         for j, name in enumerate(self.model.feature_names):
             col = z[:, j]
