@@ -1,38 +1,52 @@
-# `tail_model.py`：两段式尾部风险模型的即插即用接口
+# 共用代码：因子、前向传播、配置规则各只有一份实现
 
-一个文件，只依赖 numpy（DataFrame 输入输出需要 pandas）。它**直接读取** `artifacts/` 里训练好的 PyTorch 权重，不需要安装 torch，也不需要先导出：
+| 文件 | 内容 | 使用者 |
+|---|---|---|
+| `factor_core.py` | 13 个因子的**唯一**实现（价格因子、目标 Y、历史因子、VIX / SEC 对齐、实盘因子面板） | `features.py`（构建 `dataset.csv`）、`quantconnect/main.py` |
+| `tail_model.py` | 两段模型的**唯一**推理实现：前向传播、S(y\|x)、VaR、ES、风险评分 R、回测工具，以及 JSON 导入导出 | 训练脚本、`evaluate_tail.py`、`gpd_predict.py`、`quantconnect/export_model_for_qc.py`、`quantconnect/main.py`、`trading_strategy.ipynb` |
+| `strategy_core.py` | 配置规则 `allocate_from_risk`：R → v → B → c → w | `quantconnect/main.py`、`trading_strategy.ipynb` |
 
-| 文件 | 内容 |
-|---|---|
-| `artifacts/preprocess.json` | 特征顺序、训练期中位数/均值/标准差、截断值、阈值 u、尺度 s、π_min |
-| `artifacts/gpd_model.pt` | 第二段：门控 GPD 混合模型（26,341 个参数） |
-| `artifacts/pu_model.pt` | 第一段：跌破概率网络 p_u（23,337 个参数） |
+三个文件都只依赖 numpy / pandas，不需要 torch，可以原样加入 QuantConnect 项目。每个文件都在 3.2 万字符以内。
 
-$$
-P(L > \ell \mid x) = p_u(x)\cdot S(\ell-u \mid x),\qquad
-S(y\mid x) = (1-\pi)\,S_{\text{GPD}}(y;\xi_b,\beta_b)+\pi\,S_{\text{GPD}}(y;\xi_h,\beta_h)
-$$
+PyTorch 网络只在训练脚本里定义一次，因为训练需要自动求导。训练结束后，`check_numpy_forward()` 会检查 `tail_model.py` 能否复现 PyTorch 的输出（相对误差 < 1e-4），通过后自动写出 `quantconnect/gpd_mixture_model.json`。以后修改网络结构时，要同时修改训练脚本和 `tail_model.py`，否则训练时会直接报错。
 
-## 用法
+```
+features.py ──▶ factor_core.py ◀── quantconnect/main.py
+                      │
+             artifacts/dataset.csv
+                      │
+TQT research machine learning part.py（唯一的 torch 网络）
+        │  保存 .pt
+        ▼
+artifacts/{gpd_model.pt, pu_model.pt, preprocess.json}
+        │
+        ▼
+tail_model.py ◀── evaluate_tail.py, gpd_predict.py, notebook
+        │  to_json()（训练后自动导出，或运行 export_model_for_qc.py）
+        ▼
+quantconnect/gpd_mixture_model.json ──▶ quantconnect/main.py（TwoStageTailModel.from_json）
+```
+
+## `tail_model.py` 用法
 
 ```python
 from tail_model import TwoStageTailModel
 
-m = TwoStageTailModel.from_artifacts("artifacts")
+m = TwoStageTailModel.from_artifacts("artifacts")     # 读 .pt + preprocess.json（不需要 torch）
+m = TwoStageTailModel.from_json(text_or_path)         # 或读导出的 JSON（QuantConnect）
 
-# 输入：第 t 天的 13 个原始因子（未标准化）。DataFrame、dict 或 (n, 13) 数组都可以；NaN 会填成训练期中位数
 out = m.predict(df)                    # DataFrame：xi_b, beta_b, xi_h, beta_h, pi, p_u
-
+m.risk_score(df, d=0.07)               # R = E[(L-d)^+] = p_u · E[(L-d)^+ | L>u]
+m.risk_score(df, d=0.07, use_pu=False) # 只看条件部分
 m.tail_prob(df, loss=0.10)             # P(第二天跌幅 > 10%)
-m.var(df, alpha=0.01)                  # 无条件 VaR99（正数表示损失；p_u ≤ α 时为 NaN，表示 VaR 在 u 以下）
-m.es(df, alpha=0.01)                   # 无条件 ES99
-m.risk_score(df, d=0.07)               # 风险评分 R = E[(L-d)^+] = p_u · E[(L-d)^+ | L>u]
-m.risk_score(df, d=0.07, use_pu=False) # 只看条件部分 E[(L-d)^+ | L>u]
-
-m.cond_survival(df, y)                 # S(y|x)：已跌破 u 的前提下，再多跌 y 以上的概率
-m.cond_quantile(df, 0.99)              # 条件 q99（尾部图里的灰色虚线），以损失水平表示
-m.gpd_params(df), m.exceedance_prob(df)   # 两段网络各自的原始输出
+m.var(df, alpha=0.01), m.es(df, alpha=0.01)   # 无条件 VaR99 / ES99（p_u ≤ α 时为 NaN）
+m.cond_survival(df, y), m.cond_quantile(df, 0.99)
+m.to_json("quantconnect/gpd_mixture_model.json")
 ```
+
+输入：第 t 天的 13 个**原始**因子（未标准化），可以是 DataFrame、dict 或 (n, 13) 数组。NaN 会填成训练期中位数。
+
+函数版本：输入参数数组 `(n, 5)`，供训练脚本和画图使用：`mixture_survival`、`mixture_logpdf`、`mixture_pdf`、`mixture_quantile_excess`、`tail_probability`、`var_es`、`mixture_tail_risk`、`gpd_expected_excess`、`auc_score`、`kupiec_test`、`var_backtest`、`var99_by_decile`。
 
 命令行：
 
@@ -41,28 +55,25 @@ python tail_model.py --selftest
 python tail_model.py --csv factors.csv --out predictions.csv --d 0.07 --alpha 0.01
 ```
 
-`--csv` 输出的列：原始列、5 个分布参数、p_u、risk_score、VaR、ES、cond_q99。
+## QuantConnect 项目需要的文件
 
-## 13 个因子（列名必须一致）
+`main.py`（来自 `quantconnect/`），以及仓库根目录原样复制的 `factor_core.py`、`tail_model.py`、`strategy_core.py`。Object Store 里放 `gpd_mixture_model.json`（键 `MODEL_KEY`），可选放 `qc_sec_factors.csv`（键 `SEC_KEY`）。
 
-`vol_20d, downside_vol_20d, kurtosis_60d, momentum_60d, reversal_5d, range_5d, abn_volume, vix, n_8k_30d, filing_change, worst252, e63, echo_q`
+`main.py` 新增了配置项 `USE_PU = True`：风险评分乘上 p_u。设为 False 就是原来只用条件部分的做法。
 
-计算方法必须与训练时的 `features.py` 完全一致（例如波动率用对数收益，abn_volume = log((5 日均量+1)/(60 日均量+1))）。拿不到的因子可以传 NaN，会被填成训练期中位数。
+## 测试
 
-## 注意
+```bash
+python tests/test_parity.py
+```
 
-- 必须使用训练时的预处理统计量，不能在新数据上重新计算均值和标准差。本接口已经内置这一点。
-- BatchNorm 使用训练得到的滑动统计量，所以每只股票的输出只取决于它自己的因子，和同一批里有哪些股票无关。
-- 重新训练后，直接替换 `artifacts/` 里的三个文件即可，不需要改代码。
+1. `factor_core` 和构建数据集时的因子公式逐项一致（价格因子、目标、历史因子、QuantConnect 的实盘面板）；
+2. JSON 读写前后输出完全一致，`quantconnect/gpd_mixture_model.json` 就是 `artifacts/` 里的模型；
+3. 如果有 `artifacts/dataset.csv`，能复现 `preprocess.json` / `pu_meta.json` 里记录的验证结果；
+4. 如果装了 torch，和训练脚本的 PyTorch 网络逐项对比。
 
-## 验证
+## 验证结果（本次修改）
 
-在 `dataset.csv` 的验证期（2023-03-30 之后）上，本接口算出的结果与训练脚本记录在 `preprocess.json` / `pu_meta.json` 里的数值一致：
-
-| 指标 | 本接口 | 训练时记录 |
-|---|---|---|
-| p_u 验证对数损失 / AUC | 0.26197 / 0.7110 | 0.26197 / 0.7110 |
-| GPD 验证 NLL（8,211 个超阈值样本） | −3.1203 | −3.1203 |
-| S < 1% / 2.5% / 5% / 10% / 25% / 50% | 0.889 / 2.119 / 4.250 / 8.781 / 23.700 / 48.922 % | 完全相同 |
-
-合成后的无条件 VaR 回测（全部验证行）：超出 VaR99 的比例为 0.829%（期望 1%），超出 VaR99.9 的比例为 0.093%（期望 0.1%）。
+- **因子**：`factor_core` 与修改前的 `features.py`、修改前的 QuantConnect `main.py`，在合成数据（含缺失行和 NaN）上差值为 0；在 553,529 行的真实数据上，3 个历史因子差值也为 0。
+- **推理**：在验证期上，p_u 的对数损失和 AUC（0.26197 / 0.7110）、GPD 的 NLL（−3.1203），以及 6 个 S<α 比例，都与训练时记录的数值一致；VaR、ES、回测函数与训练脚本原来的实现差值不超过 2e-15。
+- `evaluate_tail.py` 完整运行（不需要 torch）。`quantconnect/main.py` 在模拟的 QuantConnect 接口上跑通了 `initialize()` 和 `rebalance()`。

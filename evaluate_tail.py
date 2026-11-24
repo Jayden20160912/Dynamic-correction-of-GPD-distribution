@@ -28,6 +28,8 @@ Part 3 -- two-stage model on ALL validation stock-days (artifacts/two_stage_vali
     (c) VaR99 breach rate per p_u decile: two-stage model vs a constant 10% instead of p_u(x)
     (d) the Part 1 stock over the validation period: daily loss vs its VaR99, breaches marked
 
+Model and formulas come from tail_model.py (numpy; no torch needed).
+
 Run:
     .venv/bin/python evaluate_tail.py                         # biggest validation loss
     .venv/bin/python evaluate_tail.py --ticker NVDA --date 2024-08-02
@@ -39,18 +41,16 @@ Run:
 """
 
 import argparse
-import importlib.util
 import json
 from pathlib import Path
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import torch
 from scipy import stats
-from scipy.optimize import brentq
 
 from GPD_model import COLORS, gpd_pdf, gpd_quantile, gpd_survival, plot_gpd
+import tail_model
 
 ROOT = Path(__file__).resolve().parent
 ARTIFACT_DIR = ROOT / "artifacts"
@@ -68,30 +68,32 @@ PARAM_COLS = ["xi_b", "beta_b", "xi_h", "beta_h", "pi"]
 
 
 # ==========================================
-# 0. Two-component GPD mixture
+# 0. Two-component GPD mixture (formulas from tail_model.py, the single implementation)
 # ==========================================
 
-def _pdf(y, xi, beta):            # vectorised over arrays of parameters
-    return (1.0 / beta) * (1.0 + xi * y / beta) ** (-1.0 / xi - 1.0)
+def _pdf(y, xi, beta):            # one GPD component, vectorised over arrays of parameters
+    return np.exp(tail_model.gpd_logpdf(np.asarray(y, dtype=float), xi, beta))
 
 
 def _sf(y, xi, beta):             # computed directly (not 1 - CDF) so tiny S stays accurate
-    return np.exp(-np.log1p(xi * y / beta) / xi)
+    return np.exp(tail_model.gpd_logsf(np.asarray(y, dtype=float), xi, beta))
+
+
+def _stack(xi_b, beta_b, xi_h, beta_h, pi):
+    return np.stack(np.broadcast_arrays(*(np.asarray(v, dtype=float) for v in (xi_b, beta_b, xi_h, beta_h, pi))), -1)
 
 
 def mix_pdf(y, xi_b, beta_b, xi_h, beta_h, pi):
-    return (1 - pi) * _pdf(y, xi_b, beta_b) + pi * _pdf(y, xi_h, beta_h)
+    return tail_model.mixture_pdf(_stack(xi_b, beta_b, xi_h, beta_h, pi), y)
 
 
 def mix_survival(y, xi_b, beta_b, xi_h, beta_h, pi):
-    return (1 - pi) * _sf(y, xi_b, beta_b) + pi * _sf(y, xi_h, beta_h)
+    return tail_model.mixture_survival(_stack(xi_b, beta_b, xi_h, beta_h, pi), y)
 
 
 def mix_quantile(q, xi_b, beta_b, xi_h, beta_h, pi):
-    """Excess y with mixture CDF = q (solved numerically; mixture has no closed form)."""
-    target = 1.0 - q
-    hi = max(gpd_quantile(q, xi_b, beta_b), gpd_quantile(q, xi_h, beta_h))   # S(hi) <= 1-q
-    return brentq(lambda y: mix_survival(y, xi_b, beta_b, xi_h, beta_h, pi) - target, 0.0, hi)
+    """Excess y with mixture CDF = q (tail_model.mixture_quantile_excess)."""
+    return float(tail_model.mixture_quantile_excess(_stack(xi_b, beta_b, xi_h, beta_h, pi), 1.0 - q))
 
 
 def row_params(row):
@@ -102,30 +104,16 @@ def row_params(row):
 # 1. Load model + data, predict mixture parameters
 # ==========================================
 
-def _training_module():
-    """Import the training script (its file name has spaces) to reuse the network definition."""
-    spec = importlib.util.spec_from_file_location(
-        "gpd_training", ROOT / "TQT research machine learning part.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
 def load_everything():
+    """Model (both stages, tail_model.TwoStageTailModel) + dataset with loss columns."""
     meta_path = ARTIFACT_DIR / "preprocess.json"
     data_path = ARTIFACT_DIR / "dataset.csv"
-    model_path = ARTIFACT_DIR / "gpd_model.pt"
-    for p in (meta_path, data_path, model_path):
+    for p in (meta_path, data_path, ARTIFACT_DIR / "gpd_model.pt", ARTIFACT_DIR / "pu_model.pt"):
         if not p.exists():
             raise SystemExit(f"Missing {p}. Run `TQT research machine learning part.py` first.")
 
     meta = json.loads(meta_path.read_text())
-    tm = _training_module()
-    model = tm.load_gpd_model(model_path, meta["gpd_scale"], meta.get("pi_min", tm.PI_MIN))
-    pu_path = ARTIFACT_DIR / tm.PU_MODEL_FILE
-    if not pu_path.exists():
-        raise SystemExit(f"Missing {pu_path}. Run `TQT research machine learning part.py` first.")
-    pu_model = tm.load_pu_model(pu_path)
+    model = tail_model.TwoStageTailModel.from_artifacts(ARTIFACT_DIR)
 
     df = pd.read_csv(data_path, parse_dates=["date"])
     df = df.sort_values(["ticker", "date"]).reset_index(drop=True)
@@ -136,30 +124,19 @@ def load_everything():
     df["excess"] = df["loss"] - u
     df["is_val"] = df["date"] >= pd.Timestamp(meta["train_val_split_date"])
     df["is_exc"] = df["loss"] > u
-    return meta, model, pu_model, tm, df
-
-
-def preprocess(X, meta):
-    """Exactly the training-time transform: median fill -> standardize -> clip."""
-    X = np.asarray(X, dtype="float64")
-    X = np.where(np.isnan(X), np.asarray(meta["feature_median_fill"]), X)
-    Z = (X - np.asarray(meta["feature_mean"])) / np.asarray(meta["feature_std"])
-    clip = float(meta["clip_z"])
-    return np.clip(Z, -clip, clip).astype("float32")
+    # (meta, stage-2 model, stage-1 model, module with the backtest helpers, data)
+    return meta, model, model, tail_model, df
 
 
 def predict_params(model, meta, rows, pu_model=None):
-    X = torch.from_numpy(preprocess(rows[meta["feature_names"]].values, meta))
-    model.eval()
-    with torch.no_grad():
-        pred = model(X).numpy()
+    """Add xi_b, beta_b, xi_h, beta_h, pi, S (and p_u, P_uncond) with tail_model.py."""
+    pred = model.predict(rows[meta["feature_names"]])
     out = rows.copy()
-    for i, c in enumerate(PARAM_COLS):
-        out[c] = pred[:, i].astype(float)
-    out["S"] = mix_survival(np.maximum(out["excess"].values, 0.0),
-                            *(out[c].values for c in PARAM_COLS))
+    for c in PARAM_COLS:
+        out[c] = pred[c].to_numpy(dtype=float)
+    out["S"] = tail_model.mixture_survival(out[PARAM_COLS].to_numpy(), np.maximum(out["excess"].values, 0.0))
     if pu_model is not None:                 # stage 1: p_u(x) = P(L > u | x)
-        out["p_u"] = pu_model.predict_proba(X).numpy().astype(float)
+        out["p_u"] = pred["p_u"].to_numpy(dtype=float)
         out["P_uncond"] = np.where(out["loss"] > float(meta["threshold_u_loss"]),
                                    out["p_u"] * out["S"], np.nan)
     return out

@@ -1,5 +1,8 @@
 """
-Build X (N x 10), Y (N x 1), dates, tickers for the dynamic GPD model.
+Build X (N x 13), Y (N x 1), dates, tickers for the dynamic GPD model.
+
+Factor formulas: factor_core.py (the single implementation, also used by quantconnect/main.py).
+This file adds the data plumbing: universe, Alpaca bars, VIX, SEC filings, dataset.csv.
 
 Row t of X uses only information known at the close of day t (no look-ahead);
 Y_t is the realised return of the NEXT trading day.
@@ -20,6 +23,7 @@ import pandas as pd
 from sklearn.feature_extraction.text import HashingVectorizer
 
 import data_fetch
+import factor_core
 
 ROOT = Path(__file__).resolve().parent
 ARTIFACT_DIR = ROOT / "artifacts"
@@ -50,47 +54,14 @@ def load_universe():
 UNIVERSE = load_universe()
 TICKERS = UNIVERSE.index.tolist()
 
-FEATURE_NAMES = [
-    "vol_20d",          # 1  20-day annualised realised volatility
-    "downside_vol_20d", # 2  20-day annualised downside semi-volatility
-    "kurtosis_60d",     # 3  60-day excess kurtosis of daily log returns
-    "momentum_60d",     # 4  60-day price momentum
-    "reversal_5d",      # 5  5-day return (short-term reversal)
-    "range_5d",         # 6  5-day mean (High-Low)/Close
-    "abn_volume",       # 7  log(5-day avg volume / 60-day avg volume)
-    "vix",              # 8  CBOE VIX close (FRED VIXCLS)
-    "n_8k_30d",         # 9  number of 8-K filings in the past 30 calendar days (SEC)
-    "filing_change",    # 10 1 - cosine similarity of latest 10-K/10-Q vs previous same-type filing
-    "worst252",         # 11 largest single-day loss (-return) over the past 252 trading days
-    "e63",              # 12 max |return| 60-66 trading days before the loss day (~1 quarter ago)
-    "echo_q",           # 13 mean of the same max-|return| windows 63/126/189/252 days before the loss day
-]
-HISTORY_FEATURES = ["worst252", "e63", "echo_q"]   # computed from the Y column itself
+# Factor names and formulas live in factor_core.py (shared with quantconnect/main.py).
+FEATURE_NAMES = factor_core.FEATURE_NAMES       # 13 factors, see factor_core.py for definitions
+HISTORY_FEATURES = factor_core.HISTORY_FEATURES   # computed from the Y column itself
 
 
 def add_history_features(df):
-    """Add worst252, e63, echo_q to a dataset with columns date, ticker, Y.
-
-    Row t has Y_t = return realised on the NEXT trading day (the "loss day", t+1).
-    The return realised k trading days before the loss day is Y shifted by k rows
-    within the same stock, so every value used here is known at the close of day t.
-    """
-    df = df.sort_values(["ticker", "date"], kind="stable").copy()
-    g = df.groupby("ticker", sort=False)["Y"]
-    past = lambda k: g.shift(k)                      # return realised k days before the loss day
-
-    # worst252: returns of the 252 days up to and including day t (k = 1..252)
-    loss = -past(1)
-    df["worst252"] = loss.groupby(df["ticker"]).transform(
-        lambda s: s.rolling(252, min_periods=60).max())
-
-    def window_max(center):                          # max |r| over k = center-3 .. center+3
-        return pd.concat([past(k).abs() for k in range(center - 3, center + 4)], axis=1).max(axis=1)
-
-    windows = pd.concat([window_max(c) for c in (63, 126, 189, 252)], axis=1)
-    df["e63"] = windows.iloc[:, 0]
-    df["echo_q"] = windows.mean(axis=1)               # mean of the windows that exist so far
-    return df.sort_values("date", kind="stable").reset_index(drop=True)
+    """Add worst252, e63, echo_q to a dataset with columns date, ticker, Y (factor_core.py)."""
+    return factor_core.add_history_features(df)
 
 _HASHER = HashingVectorizer(
     n_features=2 ** 18,
@@ -105,22 +76,8 @@ MIN_TEXT_CHARS = 1000
 
 # ---------- price factors + target for one stock ----------
 def price_factors(px, target_mode=TARGET_MODE):
-    c, h, l, o, v = px["close"], px["high"], px["low"], px["open"], px["volume"]
-    r = np.log(c).diff()
-    f = pd.DataFrame(index=px.index)
-    f["vol_20d"] = r.rolling(20).std() * np.sqrt(252)
-    f["downside_vol_20d"] = np.sqrt((r.clip(upper=0) ** 2).rolling(20).mean()) * np.sqrt(252)
-    f["kurtosis_60d"] = r.rolling(60).kurt()
-    f["momentum_60d"] = c / c.shift(60) - 1
-    f["reversal_5d"] = c / c.shift(5) - 1
-    f["range_5d"] = ((h - l) / c).rolling(5).mean()
-    f["abn_volume"] = np.log((v.rolling(5).mean() + 1) / (v.rolling(60).mean() + 1))
-
-    if target_mode == "overnight":
-        y = o.shift(-1) / c - 1
-    else:
-        y = c.shift(-1) / c - 1
-    return f, y
+    """7 price factors and the target Y of one stock (formulas in factor_core.py)."""
+    return factor_core.price_factors(px), factor_core.next_day_return(px, target_mode)
 
 
 # ---------- SEC factors for one stock ----------
@@ -233,7 +190,7 @@ def build_dataset(target_mode=TARGET_MODE, refresh=False, save=True):
             print(f"{t}: only {len(px)} bars, skipped")
             continue
         f, y = price_factors(px, target_mode)
-        f["vix"] = vix.reindex(f.index, method="ffill")
+        f["vix"] = factor_core.align_asof(vix, f.index).to_numpy()
 
         n_8k, change = sec_factors(t, int(UNIVERSE.at[t, "cik"]), f.index.to_series())
         f["n_8k_30d"] = n_8k

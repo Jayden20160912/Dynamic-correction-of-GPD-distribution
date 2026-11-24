@@ -45,6 +45,13 @@ Outputs (artifacts/):
     preprocess.json   preprocessing, threshold u, split dates, stage 2 settings and results
     pu_model.pt       stage 1 state_dict
     pu_meta.json      stage 1 settings and results + two-stage VaR backtest
+quantconnect/gpd_mixture_model.json   both stages as plain JSON (tail_model.to_json), for QuantConnect
+
+Single implementations shared with the rest of the project:
+    factor_core.py   the 13 factors (via features.py)
+    tail_model.py    numpy inference: forward pass, S, VaR, ES, risk score, backtest helpers.
+                     After training, check_numpy_forward() verifies that tail_model.py reproduces
+                     the PyTorch networks below; change both together if the architecture changes.
 """
 
 import argparse
@@ -61,6 +68,7 @@ import torch.nn.functional as F
 from scipy import stats
 
 import features
+import tail_model
 from features import FEATURE_NAMES, TICKERS, TARGET_MODE, DATA_START, DATA_END
 
 
@@ -105,6 +113,7 @@ VAR_ALPHAS = (0.001, 0.005, 0.01, 0.02)
 ARTIFACT_DIR = Path(__file__).resolve().parent / "artifacts"
 MODEL_FILE = "gpd_model.pt"
 PU_MODEL_FILE = "pu_model.pt"
+QC_MODEL_JSON = Path(__file__).resolve().parent / "quantconnect" / "gpd_mixture_model.json"
 
 
 # ==========================================
@@ -505,12 +514,7 @@ def train(model, data):
 # 6. Stage 1 training and evaluation (exceedance network)
 # ==========================================
 
-def auc_score(p, e):
-    """ROC AUC via the rank-sum (Mann-Whitney) formula."""
-    ranks = stats.rankdata(p)
-    pos = e > 0.5
-    n1, n0 = pos.sum(), (~pos).sum()
-    return float((ranks[pos].sum() - n1 * (n1 + 1) / 2) / (n1 * n0))
+auc_score = tail_model.auc_score          # ROC AUC (rank-sum formula), tail_model.py
 
 
 def evaluate_pu(model, X, e, n_bins=10):
@@ -585,103 +589,50 @@ def train_pu(model, data):
 
 
 # ==========================================
-# 7. Mixture formulas in numpy (float64) for quantiles, VaR and ES
+# 7. Mixture formulas in numpy (float64) for quantiles, VaR, ES and backtests
 # ==========================================
-
-def _split(params):
-    params = np.asarray(params, dtype="float64")
-    return [params[:, i] for i in range(5)]
-
-
-def mixture_sf_np(params, y):
-    """S(y|x) for excess y >= 0, numpy."""
-    xi_b, beta_b, xi_h, beta_h, pi = _split(params)
-    y = np.maximum(np.asarray(y, dtype="float64"), 0.0)
-    sf = lambda xi, b: np.exp(-np.log1p(xi * y / b) / xi)
-    return (1 - pi) * sf(xi_b, beta_b) + pi * sf(xi_h, beta_h)
-
-
-def mixture_quantile_excess(params, target):
-    """Excess y with S(y|x) = target (0 < target < 1), vectorised bisection."""
-    xi_b, beta_b, xi_h, beta_h, pi = _split(params)
-    target = np.broadcast_to(np.asarray(target, dtype="float64"), xi_b.shape)
-    qb = beta_b / xi_b * (target ** (-xi_b) - 1)
-    qh = beta_h / xi_h * (target ** (-xi_h) - 1)
-    lo, hi = np.zeros_like(qb), np.maximum(qb, qh)          # S(hi) <= target
-    for _ in range(100):
-        mid = 0.5 * (lo + hi)
-        above = mixture_sf_np(params, mid) > target
-        lo, hi = np.where(above, mid, lo), np.where(above, hi, mid)
-    return 0.5 * (lo + hi)
-
-
-def tail_probability(p_u, params, loss, u):
-    """P(L > loss | x) = p_u(x) * S(loss - u | x), for loss > u."""
-    return np.asarray(p_u) * mixture_sf_np(params, np.asarray(loss) - u)
-
-
-def var_es(p_u, params, alpha, u):
-    """Unconditional VaR_alpha and ES_alpha of the loss.
-
-    Solve p_u S(y) = alpha; VaR = u + y. If p_u <= alpha the VaR lies below u, where the GPD
-    is not used, and both are NaN.
-    """
-    p_u = np.asarray(p_u, dtype="float64")
-    ok = p_u > alpha
-    target = np.where(ok, alpha / np.where(ok, p_u, 1.0), 0.5)
-    y = mixture_quantile_excess(params, target)
-    xi_b, beta_b, xi_h, beta_h, pi = _split(params)
-    sb = np.exp(-np.log1p(xi_b * y / beta_b) / xi_b)
-    sh = np.exp(-np.log1p(xi_h * y / beta_h) / xi_h)
-    S = (1 - pi) * sb + pi * sh
-    mean_excess = ((1 - pi) * sb * (beta_b + xi_b * y) / (1 - xi_b)
-                   + pi * sh * (beta_h + xi_h * y) / (1 - xi_h)) / S
-    var = np.where(ok, u + y, np.nan)
-    es = np.where(ok, u + y + mean_excess, np.nan)
-    return var, es
-
-
-def kupiec_test(breaches, alpha):
-    """Kupiec unconditional-coverage likelihood-ratio test; returns (LR, p-value)."""
-    n, x = len(breaches), int(np.sum(breaches))
-    pi_hat = x / n
-    ll0 = (n - x) * np.log(1 - alpha) + x * np.log(alpha)
-    ll1 = (n - x) * np.log1p(-pi_hat) if x < n else 0.0
-    ll1 += x * np.log(pi_hat) if x > 0 else 0.0
-    lr = float(-2 * (ll0 - ll1))
-    return lr, float(stats.chi2.sf(lr, df=1))
+# Single implementation in tail_model.py (also used by evaluate_tail.py, gpd_predict.py,
+# quantconnect/ and the notebook). Kept under the old names for existing callers.
+mixture_sf_np = lambda params, y: tail_model.mixture_survival(params, y)
+mixture_quantile_excess = tail_model.mixture_quantile_excess
+tail_probability = tail_model.tail_probability
+var_es = tail_model.var_es
+kupiec_test = tail_model.kupiec_test
 
 
 def var_backtest(p_u, params, L, u, alphas=VAR_ALPHAS):
-    """Breach rates of the two-stage VaR on all validation stock-days.
-
-    Rows with p_u <= alpha have VaR < u (not modelled): they count as a breach when L > u.
-    """
-    out = {}
-    for a in alphas:
-        var, _ = var_es(p_u, params, a, u)
-        below_u = np.isnan(var)
-        breach = np.where(below_u, L > u, L > np.nan_to_num(var, nan=np.inf))
-        lr, pval = kupiec_test(breach, a)
-        out[str(a)] = {"expected": a, "breach_rate": float(breach.mean()),
-                       "n_breaches": int(breach.sum()), "n": int(len(breach)),
-                       "rows_var_below_u": int(below_u.sum()),
-                       "kupiec_lr": lr, "kupiec_p": pval}
-    return out
+    """Breach rates of the two-stage VaR on all validation stock-days (tail_model.var_backtest)."""
+    return tail_model.var_backtest(p_u, params, L, u, alphas)
 
 
 def var99_by_decile(p_u, params, L, u, n_bins=10):
-    """VaR99 breach rate per p_u decile: two-stage model vs a constant 10% instead of p_u(x)."""
-    rows = []
-    bins = pd.qcut(p_u, n_bins, labels=False, duplicates="drop")
-    var_m, _ = var_es(p_u, params, 0.01, u)
-    var_c, _ = var_es(np.full_like(p_u, 1 - TAIL_QUANTILE), params, 0.01, u)
-    for b in np.unique(bins):
-        m = bins == b
-        rows.append({"decile": int(b) + 1, "mean_p_u": float(p_u[m].mean()),
-                     "breach_model": float(np.mean(L[m] > np.nan_to_num(var_m[m], nan=u))),
-                     "breach_constant_p_u": float(np.mean(L[m] > var_c[m]))})
-    return rows
+    """VaR99 breach rate per p_u decile: model vs a constant 10% (tail_model.var99_by_decile)."""
+    return tail_model.var99_by_decile(p_u, params, L, u, n_bins, constant_p_u=1 - TAIL_QUANTILE)
+
+
+def check_numpy_forward(data, gpd_model, pu_model=None, tol=1e-4):
+    """The saved artifacts, run through tail_model.py (the numpy inference used everywhere else),
+    must reproduce the PyTorch networks on the validation inputs. Then write the QuantConnect JSON."""
+    m = tail_model.TwoStageTailModel.from_artifacts(ARTIFACT_DIR, require_pu=pu_model is not None)
+    z = np.asarray(data["X_val_all"], dtype="float64")
+    x = _tensor(data["X_val_all"])
+    gpd_model.eval()
+    with torch.no_grad():
+        P_torch = gpd_model(x).double().numpy()
+    rel = np.abs(m.gpd_params_z(z) - P_torch) / np.maximum(np.abs(P_torch), 1e-12)
+    worst = {c: float(v) for c, v in zip(tail_model.PARAM_COLS, rel.max(axis=0))}
+    if pu_model is not None:
+        p_torch = pu_model.predict_proba(x).double().numpy()
+        worst["p_u"] = float(np.max(np.abs(m.exceedance_prob_z(z) - p_torch) / np.maximum(p_torch, 1e-12)))
+    print("numpy (tail_model.py) vs torch, max relative difference:",
+          {k: f"{v:.1e}" for k, v in worst.items()})
+    if max(worst.values()) > tol:
+        raise RuntimeError("tail_model.py does not reproduce the trained networks -- update it "
+                           "together with the network definition in this file")
+    if m.has_pu:
+        QC_MODEL_JSON.parent.mkdir(exist_ok=True)
+        m.to_json(QC_MODEL_JSON)
+        print(f"Wrote {QC_MODEL_JSON} (both stages, for quantconnect/main.py)")
 
 
 # ==========================================
@@ -897,8 +848,8 @@ def main():
         assert abs(meta["threshold_u_loss"] - data["u"]) < 1e-12, "preprocess.json does not match data"
         gpd_model = load_gpd_model(ARTIFACT_DIR / MODEL_FILE, meta["gpd_scale"], meta["pi_min"])
 
-    if args.stage in ("all", "pu"):
-        run_stage1(data, gpd_model)
+    pu_model = run_stage1(data, gpd_model) if args.stage in ("all", "pu") else None
+    check_numpy_forward(data, gpd_model, pu_model)
 
 
 if __name__ == "__main__":

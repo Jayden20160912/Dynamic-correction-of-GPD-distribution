@@ -3,26 +3,32 @@ GPD-mixture tail-risk allocation strategy for QuantConnect (LEAN, Python).
 
 Each trading day:
   1. take daily bars of the chosen stocks up to yesterday's close (day t)
-  2. compute the 13 factors for every stock
-  3. run the trained gated GPD-mixture network -> 5 parameters per stock
-  4. turn them into a catastrophic-risk score R, relative weights v and total exposure c
+  2. compute the 13 factors for every stock                      (factor_core.py)
+  3. run both networks: 5 GPD-mixture parameters + p_u per stock  (tail_model.py)
+  4. risk score R = p_u * E[(L - d)^+ | L > u] -> relative weights v and total exposure c
+                                                                  (strategy_core.py)
   5. rebalance 30 minutes after today's open (day t+1); the rest stays in cash
 
-How to run
-  1. Locally:  python export_model_for_qc.py --artifacts ../artifacts
-     -> writes gpd_mixture_model.json (weights + preprocessing statistics)
-  2. QuantConnect -> Object Store: upload gpd_mixture_model.json (key = MODEL_KEY below)
-  3. New Python project, paste this file as main.py, edit the CONFIG section, run a backtest.
+The three shared files are the SAME files the training code uses -- one implementation of the
+factors, the forward pass and the allocation rule for the whole project.
 
-The network forward pass is written in numpy (no torch needed on QuantConnect);
-export_model_for_qc.py checks that it matches the PyTorch model exactly.
+How to run
+  1. Locally: train ("TQT research machine learning part.py" writes quantconnect/gpd_mixture_model.json)
+     or re-export with  python export_model_for_qc.py --artifacts ../artifacts
+  2. QuantConnect -> Object Store: upload gpd_mixture_model.json (key MODEL_KEY below)
+     and, optionally, qc_sec_factors.csv (key SEC_KEY)
+  3. New Python project: main.py = this file, plus three more files copied unchanged from the
+     repository root: factor_core.py, tail_model.py, strategy_core.py. Edit CONFIG, run a backtest.
 """
 
 from AlgorithmImports import *
 
-import json
 import numpy as np
 import pandas as pd
+
+from factor_core import FEATURE_NAMES, compute_factor_panel, load_sec_table
+from strategy_core import allocate_from_risk
+from tail_model import TwoStageTailModel
 
 
 # =============================================================================
@@ -40,6 +46,8 @@ SEC_KEY = "qc_sec_factors.csv"         # Object Store key of n_8k_30d / filing_c
 
 MODE = "gpd"            # "gpd" = this strategy; "equal" / "inverse_vol" = benchmarks on the same stocks
 D_LOSS = 0.07           # disaster loss threshold d
+USE_PU = True           # True:  R = p_u(x) * E[(L-d)^+ | L > u] = E[(L-d)^+]  (unconditional)
+                        # False: R = E[(L-d)^+ | L > u]  (GPD part only; the old behaviour)
 GAMMA = 1.0             # sensitivity of inverse-risk weighting
 DELTA = 1e-6            # numerical stability
 R_TARGET = None         # fixed risk budget, or None = calibrate from the CALIB_DAYS before START_DATE
@@ -50,200 +58,11 @@ HISTORY_BARS = 320      # daily bars needed per stock (echo_q looks back 255 ret
 
 
 # =============================================================================
-# 1. FACTORS  (identical to the training code: features.price_factors, features.sec_factors,
-#              features.add_history_features)
+# 1-3. FACTORS, MODEL, ALLOCATION: factor_core.py, tail_model.py, strategy_core.py
 # =============================================================================
-# t = the factor date (yesterday's close); the model predicts the loss of day t+1.
-#
-#   r_log = log(close).diff()                    log return  (vol / downside vol / kurtosis)
-#   r     = close.pct_change()                   simple return realised on day tau (= training Y)
-#
-#   vol_20d          = std(r_log, 20) * sqrt(252)
-#   downside_vol_20d = sqrt(mean(min(r_log, 0)^2, 20)) * sqrt(252)
-#   kurtosis_60d     = excess kurtosis of r_log over 60 days
-#   momentum_60d     = close / close.shift(60) - 1
-#   reversal_5d      = close / close.shift(5) - 1
-#   range_5d         = mean((high - low) / close, 5)
-#   abn_volume       = log((mean(volume, 5) + 1) / (mean(volume, 60) + 1))
-#   vix              = VIX close, last value on or before t
-#   n_8k_30d         = number of 8-K filings public in the last 30 calendar days   } SEC EDGAR, read
-#   filing_change    = 1 - cosine similarity of the latest 10-K/10-Q vs the        } from SEC_KEY in the
-#                      previous same-type filing                                   } Object Store
-#   worst252         = max of (-r) over the 252 days up to t (at least 60 days)
-#   e63              = max |r_tau| for tau in t-65 .. t-59  (k = 60..66 days before the loss day t+1)
-#   echo_q           = mean of the same 7-day window max at 63, 126, 189, 252 (windows that exist)
-#
-# SEC values on date t only use filings accepted before 16:00 ET on t (later ones count from t+1).
-# If the SEC file is not in the Object Store, the two SEC factors stay NaN -> training median.
-
-def echo_window_max(abs_r, lag):
-    """max |r_tau| for tau in [t+1-lag-3, t+1-lag+3]; missing days are skipped (as in training)."""
-    return abs_r.rolling(7, min_periods=1).max().shift(lag - 4)
-
-
-def bar_dates(index):
-    """Trading date of each daily bar. QuantConnect stamps a daily bar with its end time
-    (the close, or midnight after it), so step back one second before taking the date."""
-    return (pd.DatetimeIndex(index) - pd.Timedelta(seconds=1)).normalize()
-
-
-def compute_factor_panel(bars, vix=None, sec=None):
-    """Daily bars of ONE stock (index = time; open, high, low, close, volume) -> factors per day.
-
-    vix: optional Series of VIX closes indexed by time (aligned as-of to the stock's dates).
-    sec: optional DataFrame indexed by calendar date with columns n_8k_30d, filing_change
-         (this stock's rows of qc_sec_factors.csv).
-    Returns a DataFrame with one row per day and one column per factor.
-    """
-    bars = bars.sort_index()
-    close, high, low, volume = bars["close"], bars["high"], bars["low"], bars["volume"]
-    r_log = np.log(close).diff()
-    r = close.pct_change()
-    abs_r = r.abs()
-
-    f = pd.DataFrame(index=bars.index)
-    # ---- price factors (features.price_factors) ----
-    f["vol_20d"] = r_log.rolling(20).std() * np.sqrt(252)
-    f["downside_vol_20d"] = np.sqrt((r_log.clip(upper=0) ** 2).rolling(20).mean()) * np.sqrt(252)
-    f["kurtosis_60d"] = r_log.rolling(60).kurt()
-    f["momentum_60d"] = close / close.shift(60) - 1
-    f["reversal_5d"] = close / close.shift(5) - 1
-    f["range_5d"] = ((high - low) / close).rolling(5).mean()
-    f["abn_volume"] = np.log((volume.rolling(5).mean() + 1) / (volume.rolling(60).mean() + 1))
-    f["vix"] = align_asof(vix, f.index) if vix is not None else np.nan
-    # ---- SEC factors (features.sec_factors, precomputed by qc_sec_factors.py) ----
-    if sec is not None and len(sec):
-        d = bar_dates(f.index)
-        f["n_8k_30d"] = sec["n_8k_30d"].reindex(d).to_numpy(dtype=float)
-        f["filing_change"] = sec["filing_change"].reindex(d).to_numpy(dtype=float)
-    else:
-        f["n_8k_30d"] = np.nan
-        f["filing_change"] = np.nan
-    # ---- history factors (features.add_history_features) ----
-    f["worst252"] = (-r).rolling(252, min_periods=60).max()
-    f["e63"] = echo_window_max(abs_r, 63)
-    f["echo_q"] = pd.concat([echo_window_max(abs_r, L) for L in (63, 126, 189, 252)],
-                            axis=1).mean(axis=1)
-    return f
-
-
-def load_sec_table(text):
-    """qc_sec_factors.csv text -> {ticker: DataFrame indexed by date (n_8k_30d, filing_change)}."""
-    from io import StringIO
-    df = pd.read_csv(StringIO(text), parse_dates=["date"])
-    return {t: g.set_index("date")[["n_8k_30d", "filing_change"]].sort_index()
-            for t, g in df.groupby("ticker")}
-
-
-def align_asof(series, index):
-    """Value of `series` at the last time <= each time in `index` (no look-ahead)."""
-    s = series.dropna().sort_index()
-    if s.empty:
-        return pd.Series(np.nan, index=index)
-    pos = s.index.searchsorted(index, side="right") - 1
-    vals = np.where(pos >= 0, s.to_numpy()[np.clip(pos, 0, None)], np.nan)
-    return pd.Series(vals, index=index)
-
-
-# =============================================================================
-# 2. MODEL  (numpy forward pass of the gated GPD-mixture network)
-# =============================================================================
-PARAM_COLS = ["xi_b", "beta_b", "xi_h", "beta_h", "pi"]
-
-
-def _sigmoid(x):
-    return 1.0 / (1.0 + np.exp(-x))
-
-
-def _softplus(x):
-    return np.logaddexp(0.0, x)
-
-
-class GPDMixtureModel:
-    """Loads the JSON written by export_model_for_qc.py and reproduces the PyTorch forward pass:
-
-    trunk  Linear(13,224,no bias)-BN-ReLU-Linear(224,88,no bias)-BN-ReLU -> h
-    base   Linear(88,2):  xi_b = 0.01 + 0.34*sigmoid, beta_b = s*softplus + 1e-6
-    gate   Linear(88,32,no bias)-BN-ReLU-Linear(32,1): pi = pi_min + (1-pi_min)*sigmoid
-    heavy  global scalars: xi_h = 0.35 + 0.45*sigmoid(theta_xi), beta_h = s*softplus(theta_beta) + 1e-6
-    BatchNorm uses the trained moving statistics (inference mode).
-    """
-
-    def __init__(self, model_json):
-        m = model_json["meta"]
-        self.feature_names = list(m["feature_names"])
-        self.u = float(m["threshold_u_loss"])
-        self.pi_min = float(m["pi_min"])
-        self.eps = float(m["bn_eps"])
-        self.median = np.asarray(m["feature_median_fill"], dtype=float)
-        self.mean = np.asarray(m["feature_mean"], dtype=float)
-        self.std = np.asarray(m["feature_std"], dtype=float)
-        self.clip_z = float(m["clip_z"])
-        self.w = {k: np.asarray(v, dtype=float) for k, v in model_json["weights"].items()}
-        self.scale = float(np.asarray(self.w["scale"]).reshape(()))
-
-    def zscores(self, X):
-        """Raw factors (n, 13) -> standardised factors before clipping (used for diagnostics)."""
-        X = np.asarray(X, dtype=float)
-        X = np.where(np.isnan(X), self.median, X)
-        return (X - self.mean) / self.std
-
-    def preprocess(self, X):
-        """Same as training: median fill -> z-score with training stats -> clip to +/- clip_z."""
-        return np.clip(self.zscores(X), -self.clip_z, self.clip_z)
-
-    def _bn(self, x, prefix):
-        w = self.w
-        return ((x - w[prefix + ".running_mean"]) / np.sqrt(w[prefix + ".running_var"] + self.eps)
-                * w[prefix + ".weight"] + w[prefix + ".bias"])
-
-    def forward(self, X_raw):
-        """Raw factor matrix (n, 13) in feature_names order -> parameters (n, 5)."""
-        w = self.w
-        x = self.preprocess(X_raw)
-        h = np.maximum(self._bn(x @ w["trunk.0.weight"].T, "trunk.1"), 0.0)
-        h = np.maximum(self._bn(h @ w["trunk.3.weight"].T, "trunk.4"), 0.0)
-        a = h @ w["base_head.weight"].T + w["base_head.bias"]
-        xi_b = 0.01 + 0.34 * _sigmoid(a[:, 0])
-        beta_b = self.scale * _softplus(a[:, 1]) + 1e-6
-        g = np.maximum(self._bn(h @ w["gate.0.weight"].T, "gate.1"), 0.0)
-        g = (g @ w["gate.3.weight"].T + w["gate.3.bias"])[:, 0]
-        pi = np.clip(self.pi_min + (1.0 - self.pi_min) * _sigmoid(g), 1e-6, 1 - 1e-6)
-        ones = np.ones_like(xi_b)
-        xi_h = (0.35 + 0.45 * _sigmoid(float(np.asarray(w["theta_xi"]).reshape(())))) * ones
-        beta_h = (self.scale * _softplus(float(np.asarray(w["theta_beta"]).reshape(()))) + 1e-6) * ones
-        return np.column_stack([xi_b, beta_b, xi_h, beta_h, pi])
-
-
-# =============================================================================
-# 3. STRATEGY  (five parameters -> risk score -> weights and exposure)
-# =============================================================================
-
-def gpd_expected_excess(xi, beta, a):
-    """E[(Y - a)^+] of one GPD = P(Y > a) * E[Y - a | Y > a]; requires 0 < xi < 1."""
-    survival = np.exp(-np.log1p(xi * a / beta) / xi)
-    return survival * (beta + xi * a) / (1.0 - xi)
-
-
-def mixture_tail_risk(params, d, u):
-    """R = (1 - pi) * R_base + pi * R_heavy  (expectation is linear in the mixture weights)."""
-    xi_b, beta_b, xi_h, beta_h, pi = np.asarray(params, dtype=float).T
-    a = d - u
-    base = (1.0 - pi) * gpd_expected_excess(xi_b, beta_b, a)
-    heavy = pi * gpd_expected_excess(xi_h, beta_h, a)
-    return base + heavy, base, heavy
-
-
-def allocate_from_risk(R, R_target, gamma=1.0, delta=1e-6):
-    """R (one value per stock, ONE day) -> weights, cash, v, B, c."""
-    R = np.asarray(R, dtype=float)
-    scores = -gamma * np.log(R + delta)          # inverse-risk weighting in log space
-    scores = np.exp(scores - np.max(scores))
-    v = scores / scores.sum()
-    B = float(np.sum(v * R))                     # risk of the fully invested portfolio
-    c = min(1.0, R_target / B) if B > 0 else 1.0 # total exposure
-    weights = c * v
-    return weights, 1.0 - weights.sum(), v, B, c
+# Same files as in the training repository (do not edit copies here).
+# SEC factors: qc_sec_factors.csv in the Object Store (SEC_KEY); value on date d = known at the
+# close of d. Missing file / stocks / dates -> NaN -> training median in the preprocessing.
 
 
 # =============================================================================
@@ -261,7 +80,7 @@ def factor_panel_from_history(hist, symbols, vix, sec_tables=None):
         bars = bars[["open", "high", "low", "close", "volume"]].dropna(subset=["close"])
         if len(bars) >= 2:
             sec = (sec_tables or {}).get(sym.value)
-            panels[sym] = compute_factor_panel(bars, vix, sec)
+            panels[sym] = compute_factor_panel(bars, vix, sec, end_stamped=True)
     return panels
 
 
@@ -313,10 +132,16 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         if not self.object_store.contains_key(MODEL_KEY):
             raise ValueError(f"Object Store key '{MODEL_KEY}' not found. Upload the file written by "
                              f"export_model_for_qc.py first.")
-        self.model = GPDMixtureModel(json.loads(self.object_store.read(MODEL_KEY)))
+        self.model = TwoStageTailModel.from_json(self.object_store.read(MODEL_KEY))
         if not 0 <= self.model.u < D_LOSS:
             raise ValueError(f"need 0 <= u < d, got u={self.model.u}, d={D_LOSS}")
-        self.log(f"model loaded: u = {self.model.u:.4f}, features = {self.model.feature_names}")
+        self.log(f"model loaded: u = {self.model.u:.4f}, pi_min = {self.model.pi_min}, "
+                 f"p_u network: {self.model.has_pu}, features = {self.model.feature_names}")
+        if USE_PU and not self.model.has_pu:
+            raise ValueError("USE_PU = True but the model file has no exceedance network; re-export "
+                             "it with export_model_for_qc.py (needs pu_model.pt) or set USE_PU = False")
+        if list(self.model.feature_names) != FEATURE_NAMES:
+            raise ValueError("model feature order differs from factor_core.FEATURE_NAMES")
         missing = [n for n in self.model.feature_names
                    if n not in compute_factor_panel(_dummy_bars()).columns]
         if missing:
@@ -369,8 +194,7 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
             raise ValueError("no history for calibration; set R_TARGET to a number instead")
         panel = pd.concat(frames)
         X = panel.reindex(columns=self.model.feature_names).to_numpy(dtype=float)  # missing -> NaN
-        params = self.model.forward(X)
-        panel["R"] = mixture_tail_risk(params, D_LOSS, self.model.u)[0]
+        panel["R"] = self.model.risk_score(X, D_LOSS, use_pu=USE_PU)
         B = panel.groupby(level=0)["R"].apply(
             lambda R: allocate_from_risk(R.to_numpy(), np.inf, GAMMA, DELTA)[3])
         self.log(f"calibration: {len(B)} days, B_t median {B.median():.6g}, "
@@ -396,13 +220,14 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
             self.checked_distribution = True
 
         if MODE == "gpd":
-            params = self.model.forward(X)
-            R, R_base, R_heavy = mixture_tail_risk(params, D_LOSS, self.model.u)
+            R, R_base, R_heavy, p_u = self.model.risk_score(X, D_LOSS, use_pu=USE_PU, return_parts=True)
             weights, cash, v, B, c = allocate_from_risk(R, self.r_target, GAMMA, DELTA)
             self.plot("Exposure", "invested c", c)
             self.plot("Risk", "B (full investment)", B)
             self.plot("Risk", "R_target", self.r_target)
             self.plot("Risk", "heavy share of R", float(np.mean(R_heavy / R)))
+            if USE_PU:
+                self.plot("Exceedance", "mean p_u", float(np.mean(p_u)))
         elif MODE == "equal":
             weights = np.full(len(syms), 1.0 / len(syms))
         elif MODE == "inverse_vol":
