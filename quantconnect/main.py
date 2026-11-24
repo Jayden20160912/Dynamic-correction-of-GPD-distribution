@@ -36,6 +36,7 @@ END_DATE = (2026, 10, 30)
 CASH = 1_000_000
 
 MODEL_KEY = "gpd_mixture_model.json"   # Object Store key of the exported model
+SEC_KEY = "qc_sec_factors.csv"         # Object Store key of n_8k_30d / filing_change (qc_sec_factors.py)
 
 MODE = "gpd"            # "gpd" = this strategy; "equal" / "inverse_vol" = benchmarks on the same stocks
 D_LOSS = 0.07           # disaster loss threshold d
@@ -49,62 +50,89 @@ HISTORY_BARS = 320      # daily bars needed per stock (echo_q looks back 255 ret
 
 
 # =============================================================================
-# 1. FACTORS  (must match the definitions used in training -- see notes below)
+# 1. FACTORS  (identical to the training code: features.price_factors, features.sec_factors,
+#              features.add_history_features)
 # =============================================================================
-# r_tau = simple close-to-close return realised on day tau; t = the factor date.
+# t = the factor date (yesterday's close); the model predicts the loss of day t+1.
 #
-# The three history factors follow the model diagram exactly:
-#   worst252 = max over the last 252 days of (-r_tau)
-#   e63      = max |r_tau| for tau in t+1-66 ... t+1-60
-#   echo_q   = mean of the same 7-day window max at 63, 126, 189, 252 trading days back
+#   r_log = log(close).diff()                    log return  (vol / downside vol / kurtosis)
+#   r     = close.pct_change()                   simple return realised on day tau (= training Y)
 #
-# The other factors use standard definitions whose SCALE was checked against the training
-# mean / std stored in preprocess.json (annualised volatilities, log abnormal volume, excess
-# kurtosis). Exact windows and formulas should still be confirmed with the training code
-# (features.py), because the model standardises every factor with the TRAINING mean and std.
-# The algorithm logs a warning on the first rebalance if a factor's live values are far from
-# the training distribution.
+#   vol_20d          = std(r_log, 20) * sqrt(252)
+#   downside_vol_20d = sqrt(mean(min(r_log, 0)^2, 20)) * sqrt(252)
+#   kurtosis_60d     = excess kurtosis of r_log over 60 days
+#   momentum_60d     = close / close.shift(60) - 1
+#   reversal_5d      = close / close.shift(5) - 1
+#   range_5d         = mean((high - low) / close, 5)
+#   abn_volume       = log((mean(volume, 5) + 1) / (mean(volume, 60) + 1))
+#   vix              = VIX close, last value on or before t
+#   n_8k_30d         = number of 8-K filings public in the last 30 calendar days   } SEC EDGAR, read
+#   filing_change    = 1 - cosine similarity of the latest 10-K/10-Q vs the        } from SEC_KEY in the
+#                      previous same-type filing                                   } Object Store
+#   worst252         = max of (-r) over the 252 days up to t (at least 60 days)
+#   e63              = max |r_tau| for tau in t-65 .. t-59  (k = 60..66 days before the loss day t+1)
+#   echo_q           = mean of the same 7-day window max at 63, 126, 189, 252 (windows that exist)
 #
-# n_8k_30d and filing_change need SEC filing data, which is not wired in yet. They are
-# left as NaN, and the preprocessing replaces NaN with the training median.
+# SEC values on date t only use filings accepted before 16:00 ET on t (later ones count from t+1).
+# If the SEC file is not in the Object Store, the two SEC factors stay NaN -> training median.
 
 def echo_window_max(abs_r, lag):
-    """max |r_tau| for tau in [t+1-lag-3, t+1-lag+3]  (a 7-day window centred lag-1 days back)."""
-    return abs_r.rolling(7).max().shift(lag - 4)
+    """max |r_tau| for tau in [t+1-lag-3, t+1-lag+3]; missing days are skipped (as in training)."""
+    return abs_r.rolling(7, min_periods=1).max().shift(lag - 4)
 
 
-def compute_factor_panel(bars, vix=None):
+def bar_dates(index):
+    """Trading date of each daily bar. QuantConnect stamps a daily bar with its end time
+    (the close, or midnight after it), so step back one second before taking the date."""
+    return (pd.DatetimeIndex(index) - pd.Timedelta(seconds=1)).normalize()
+
+
+def compute_factor_panel(bars, vix=None, sec=None):
     """Daily bars of ONE stock (index = time; open, high, low, close, volume) -> factors per day.
 
     vix: optional Series of VIX closes indexed by time (aligned as-of to the stock's dates).
+    sec: optional DataFrame indexed by calendar date with columns n_8k_30d, filing_change
+         (this stock's rows of qc_sec_factors.csv).
     Returns a DataFrame with one row per day and one column per factor.
     """
     bars = bars.sort_index()
     close, high, low, volume = bars["close"], bars["high"], bars["low"], bars["volume"]
+    r_log = np.log(close).diff()
     r = close.pct_change()
     abs_r = r.abs()
 
     f = pd.DataFrame(index=bars.index)
-    # ---- ten original factors ----
-    # Scales checked against the training statistics in preprocess.json (feature_mean / feature_std):
-    #   vol_20d 0.34 and downside_vol_20d 0.24 -> annualised; abn_volume mean -0.06 -> log ratio.
-    # TODO: still confirm exact windows / formulas with features.py.
-    f["vol_20d"] = r.rolling(20).std() * np.sqrt(252)
-    f["downside_vol_20d"] = np.sqrt((r.clip(upper=0.0) ** 2).rolling(20).mean() * 252)
-    f["kurtosis_60d"] = r.rolling(60).kurt()                       # excess kurtosis (normal = 0)
-    f["momentum_60d"] = close / close.shift(60) - 1.0
-    f["reversal_5d"] = close / close.shift(5) - 1.0
+    # ---- price factors (features.price_factors) ----
+    f["vol_20d"] = r_log.rolling(20).std() * np.sqrt(252)
+    f["downside_vol_20d"] = np.sqrt((r_log.clip(upper=0) ** 2).rolling(20).mean()) * np.sqrt(252)
+    f["kurtosis_60d"] = r_log.rolling(60).kurt()
+    f["momentum_60d"] = close / close.shift(60) - 1
+    f["reversal_5d"] = close / close.shift(5) - 1
     f["range_5d"] = ((high - low) / close).rolling(5).mean()
-    f["abn_volume"] = np.log(volume / volume.rolling(20).mean().shift(1))  # vs previous 20-day average
+    f["abn_volume"] = np.log((volume.rolling(5).mean() + 1) / (volume.rolling(60).mean() + 1))
     f["vix"] = align_asof(vix, f.index) if vix is not None else np.nan
-    f["n_8k_30d"] = np.nan          # TODO: SEC 8-K filings in the last 30 days
-    f["filing_change"] = np.nan     # TODO: SEC filing feature
-    # ---- three history factors (definitions from the model diagram) ----
-    f["worst252"] = (-r).rolling(252).max()
+    # ---- SEC factors (features.sec_factors, precomputed by qc_sec_factors.py) ----
+    if sec is not None and len(sec):
+        d = bar_dates(f.index)
+        f["n_8k_30d"] = sec["n_8k_30d"].reindex(d).to_numpy(dtype=float)
+        f["filing_change"] = sec["filing_change"].reindex(d).to_numpy(dtype=float)
+    else:
+        f["n_8k_30d"] = np.nan
+        f["filing_change"] = np.nan
+    # ---- history factors (features.add_history_features) ----
+    f["worst252"] = (-r).rolling(252, min_periods=60).max()
     f["e63"] = echo_window_max(abs_r, 63)
     f["echo_q"] = pd.concat([echo_window_max(abs_r, L) for L in (63, 126, 189, 252)],
-                            axis=1).mean(axis=1, skipna=False)
+                            axis=1).mean(axis=1)
     return f
+
+
+def load_sec_table(text):
+    """qc_sec_factors.csv text -> {ticker: DataFrame indexed by date (n_8k_30d, filing_change)}."""
+    from io import StringIO
+    df = pd.read_csv(StringIO(text), parse_dates=["date"])
+    return {t: g.set_index("date")[["n_8k_30d", "filing_change"]].sort_index()
+            for t, g in df.groupby("ticker")}
 
 
 def align_asof(series, index):
@@ -222,7 +250,7 @@ def allocate_from_risk(R, R_target, gamma=1.0, delta=1e-6):
 # 4. HISTORY HELPERS  (QuantConnect history DataFrame -> factor matrix)
 # =============================================================================
 
-def factor_panel_from_history(hist, symbols, vix):
+def factor_panel_from_history(hist, symbols, vix, sec_tables=None):
     """QuantConnect daily history (MultiIndex symbol, time) -> {symbol: factor DataFrame}."""
     panels = {}
     for sym in symbols:
@@ -232,7 +260,8 @@ def factor_panel_from_history(hist, symbols, vix):
             continue
         bars = bars[["open", "high", "low", "close", "volume"]].dropna(subset=["close"])
         if len(bars) >= 2:
-            panels[sym] = compute_factor_panel(bars, vix)
+            sec = (sec_tables or {}).get(sym.value)
+            panels[sym] = compute_factor_panel(bars, vix, sec)
     return panels
 
 
@@ -293,6 +322,16 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         if missing:
             self.log(f"WARNING: factors not computed by this algorithm (left NaN -> training median): {missing}")
 
+        self.sec_tables = {}
+        if self.object_store.contains_key(SEC_KEY):
+            self.sec_tables = load_sec_table(self.object_store.read(SEC_KEY))
+            no_sec = [t for t in TICKERS if t not in self.sec_tables]
+            self.log(f"SEC factors loaded for {len(self.sec_tables)} tickers"
+                     + (f"; missing (-> training median): {no_sec}" if no_sec else ""))
+        else:
+            self.log(f"WARNING: Object Store key '{SEC_KEY}' not found; n_8k_30d and filing_change "
+                     f"-> training median")
+
         self.r_target = R_TARGET if R_TARGET is not None else self.calibrate_r_target()
         self.log(f"R_target = {self.r_target:.6g}")
         self.checked_distribution = False
@@ -313,7 +352,7 @@ class GPDMixtureTailRiskAlgorithm(QCAlgorithm):
         hist = self.history(self.symbols, bars, Resolution.DAILY)
         if hist is None or len(hist) == 0:
             return {}
-        return factor_panel_from_history(hist, self.symbols, self.vix_series(bars))
+        return factor_panel_from_history(hist, self.symbols, self.vix_series(bars), self.sec_tables)
 
     # ---------------------------------------------------------------- calibration
     def calibrate_r_target(self):
